@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Calculator, Plus, Trash2, CheckCircle2, Sparkles } from "lucide-react";
 import { createQuoteAction } from "@/app/actions";
 import { CANADIAN_TAX_RATES, PROVINCE_CODES, calculateDocumentTotals } from "@/lib/tax";
-import { centsToDecimalString, formatCAD, toCents } from "@/lib/money";
+import { centsToDecimalString, formatCAD, lineNet, toCents } from "@/lib/money";
 import {
   DEFAULT_MATERIALS,
   DEFAULT_COREX_SIZES,
@@ -23,11 +23,23 @@ interface CustomerRow {
   taxExempt: boolean;
 }
 
-export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
+const DEFAULT_SAMPLE_DESC =
+  "Custom Printed 3M IJ35C Vinyl Graphics — Laminated & Installed";
+
+export function QuoteBuilderForm({
+  customers,
+  initialCustomerId,
+}: {
+  customers: CustomerRow[];
+  initialCustomerId?: number;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [customerId, setCustomerId] = useState<number>(customers[0]?.id ?? 1);
+  const initialCust =
+    customers.find((c) => c.id === initialCustomerId) ?? customers[0];
+
+  const [customerId, setCustomerId] = useState<number>(initialCust?.id ?? 1);
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === customerId) ?? customers[0],
     [customers, customerId]
@@ -36,12 +48,12 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
   const [title, setTitle] = useState("");
   const [poReference, setPoReference] = useState("");
   const [siteAddress, setSiteAddress] = useState(
-    selectedCustomer
-      ? `${selectedCustomer.addressLine1 ?? ""}, ${selectedCustomer.city ?? "Halifax"}`
+    initialCust
+      ? `${initialCust.addressLine1 ?? ""}, ${initialCust.city ?? "Halifax"}`
       : ""
   );
   const [siteProvince, setSiteProvince] = useState<string>(
-    selectedCustomer?.province ?? "NS"
+    initialCust?.province ?? "NS"
   );
   const [notes, setNotes] = useState("");
   const [customerTerms, setCustomerTerms] = useState(
@@ -53,7 +65,7 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
 
   const [lines, setLines] = useState([
     {
-      description: "Custom Printed 3M IJ35C Vinyl Graphics — Laminated & Installed",
+      description: DEFAULT_SAMPLE_DESC,
       quantity: "1",
       unitPriceDollars: "450.00",
       taxExempt: false,
@@ -67,10 +79,14 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
   );
   const [calcWidthFt, setCalcWidthFt] = useState("8");
   const [calcHeightFt, setCalcHeightFt] = useState("4");
+  const [calcQty, setCalcQty] = useState("1");
   const [calcLaminate, setCalcLaminate] = useState(true);
   const [calcGrommets, setCalcGrommets] = useState(false);
+  const [calcFeedback, setCalcFeedback] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+
+  const isBannerMaterial = calcMaterialKey.includes("banner");
 
   const liveTotals = useMemo(() => {
     try {
@@ -101,14 +117,21 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
           material: mat,
           widthFt: w,
           heightFt: h,
-          needsLaminate: calcLaminate,
-          needsGrommets: calcGrommets,
+          needsLaminate: isBannerMaterial ? false : calcLaminate,
+          needsGrommets: isBannerMaterial ? calcGrommets : false,
         }),
       };
     } catch {
       return null;
     }
-  }, [calcMaterialKey, calcWidthFt, calcHeightFt, calcLaminate, calcGrommets]);
+  }, [
+    calcMaterialKey,
+    calcWidthFt,
+    calcHeightFt,
+    calcLaminate,
+    calcGrommets,
+    isBannerMaterial,
+  ]);
 
   function handleCustomerChange(newId: number) {
     setCustomerId(newId);
@@ -119,41 +142,54 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
     }
   }
 
+  function appendOrReplaceSampleLine(newLine: {
+    description: string;
+    quantity: string;
+    unitPriceDollars: string;
+    taxExempt: boolean;
+  }) {
+    setLines((prev) => {
+      if (
+        prev.length === 1 &&
+        (prev[0]!.description === DEFAULT_SAMPLE_DESC ||
+          !prev[0]!.description.trim())
+      ) {
+        return [newLine];
+      }
+      return [...prev, newLine];
+    });
+    setCalcFeedback(`✓ Added "${newLine.description}"`);
+    setTimeout(() => setCalcFeedback(null), 2500);
+  }
+
   function addCalculatedMaterialLine() {
     if (!calcPreview) return;
     const { material, result } = calcPreview;
     const extras = [
-      calcLaminate ? "Laminated" : null,
-      calcGrommets ? "Hemmed & Grommeted" : null,
+      !isBannerMaterial && calcLaminate ? "Laminated" : null,
+      isBannerMaterial && calcGrommets ? "Hemmed & Grommeted" : null,
     ]
       .filter(Boolean)
       .join(", ");
 
-    setLines((prev) => [
-      ...prev,
-      {
-        description: `${material.name} (${calcWidthFt}ft × ${calcHeightFt}ft${extras ? ` — ${extras}` : ""})`,
-        quantity: "1",
-        unitPriceDollars: centsToDecimalString(result.finalPriceCents),
-        taxExempt: false,
-      },
-    ]);
-    setShowCalc(false);
+    appendOrReplaceSampleLine({
+      description: `${material.name} (${calcWidthFt}ft × ${calcHeightFt}ft${extras ? ` — ${extras}` : ""})`,
+      quantity: calcQty || "1",
+      unitPriceDollars: centsToDecimalString(result.finalPriceCents),
+      taxExempt: false,
+    });
   }
 
   function addCorexPreset(sizeKey: string) {
     const c = DEFAULT_COREX_SIZES.find((s) => s.sizeKey === sizeKey);
     if (!c) return;
     const unitSellCents = Math.round((c.baseCostCents / 100) * c.markup * 100);
-    setLines((prev) => [
-      ...prev,
-      {
-        description: `Coroplast Sign ${sizeKey.replace("x", '" × ')}" (${c.sqft} sq ft)`,
-        quantity: "1",
-        unitPriceDollars: centsToDecimalString(unitSellCents),
-        taxExempt: false,
-      },
-    ]);
+    appendOrReplaceSampleLine({
+      description: `Coroplast Sign ${sizeKey.replace("x", '" × ')}" (${c.sqft} sq ft)`,
+      quantity: calcQty || "1",
+      unitPriceDollars: centsToDecimalString(unitSellCents),
+      taxExempt: false,
+    });
   }
 
   return (
@@ -196,10 +232,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label
+              htmlFor="quote-customer-select"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
               Customer (Synced from Sage)
             </label>
             <select
+              id="quote-customer-select"
+              name="customerId"
               value={customerId}
               onChange={(e) => handleCustomerChange(Number(e.target.value))}
               className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900"
@@ -213,10 +254,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-              Project / Quote Title
+            <label
+              htmlFor="quote-title-input"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
+              Project / Quote Title *
             </label>
             <input
+              id="quote-title-input"
+              name="title"
               type="text"
               required
               value={title}
@@ -227,10 +273,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label
+              htmlFor="quote-site-address"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
               Site Address
             </label>
             <input
+              id="quote-site-address"
+              name="siteAddress"
               type="text"
               value={siteAddress}
               onChange={(e) => setSiteAddress(e.target.value)}
@@ -241,10 +292,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+              <label
+                htmlFor="quote-site-province"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+              >
                 Delivery Province (Tax)
               </label>
               <select
+                id="quote-site-province"
+                name="siteProvince"
                 value={siteProvince}
                 onChange={(e) => setSiteProvince(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"
@@ -258,10 +314,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+              <label
+                htmlFor="quote-po-reference"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+              >
                 Customer PO / Reference
               </label>
               <input
+                id="quote-po-reference"
+                name="poReference"
                 type="text"
                 value={poReference}
                 onChange={(e) => setPoReference(e.target.value)}
@@ -287,7 +348,7 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
             <button
               type="button"
               onClick={() => setShowCalc((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-xs px-3.5 py-2 transition"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-xs px-3.5 py-2 transition cursor-pointer"
             >
               <Calculator className="w-3.5 h-3.5 text-amber-600" />
               {showCalc ? "Hide Sign Calculator" : "Vinyl / Banner / Corex Calculator"}
@@ -305,7 +366,7 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
                   },
                 ])
               }
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3.5 py-2 transition"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3.5 py-2 transition cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" /> Add Line
             </button>
@@ -315,22 +376,32 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
         {/* Optional Integrated Pricing Calculator */}
         {showCalc && (
           <div className="rounded-2xl bg-slate-950 text-white p-5 space-y-4 border border-slate-800">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-bold text-amber-400">
                 <Sparkles className="w-4 h-4" />
                 Giant Promotions Material & Corex Pricing Helper
               </div>
-              <span className="text-xs text-slate-400">
-                Uses your verified material costs, ink, laminate & $25/hr labor formulas
-              </span>
+              {calcFeedback ? (
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {calcFeedback}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400">
+                  Verified material costs, ink, laminate & $25/hr labor formulas
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
               <div className="sm:col-span-2">
-                <label className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                <label
+                  htmlFor="calc-material-select"
+                  className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1"
+                >
                   Material
                 </label>
                 <select
+                  id="calc-material-select"
                   value={calcMaterialKey}
                   onChange={(e) => setCalcMaterialKey(e.target.value)}
                   className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white"
@@ -343,10 +414,14 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                <label
+                  htmlFor="calc-width-ft"
+                  className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1"
+                >
                   Width (ft)
                 </label>
                 <input
+                  id="calc-width-ft"
                   type="number"
                   step="0.5"
                   min="0.5"
@@ -356,10 +431,14 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
                 />
               </div>
               <div>
-                <label className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">
+                <label
+                  htmlFor="calc-height-ft"
+                  className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1"
+                >
                   Height (ft)
                 </label>
                 <input
+                  id="calc-height-ft"
                   type="number"
                   step="0.5"
                   min="0.5"
@@ -368,37 +447,57 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
                   className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white"
                 />
               </div>
+              <div>
+                <label
+                  htmlFor="calc-qty-input"
+                  className="block text-[11px] uppercase tracking-wider text-slate-400 mb-1"
+                >
+                  Pieces / Qty
+                </label>
+                <input
+                  id="calc-qty-input"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={calcQty}
+                  onChange={(e) => setCalcQty(e.target.value)}
+                  className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white"
+                />
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
               <div className="flex items-center gap-4 text-xs text-slate-300">
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={calcLaminate}
-                    onChange={(e) => setCalcLaminate(e.target.checked)}
-                  />
-                  Add Laminate (+4ft waste)
-                </label>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={calcGrommets}
-                    onChange={(e) => setCalcGrommets(e.target.checked)}
-                  />
-                  Banner Grommets
-                </label>
+                {!isBannerMaterial ? (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={calcLaminate}
+                      onChange={(e) => setCalcLaminate(e.target.checked)}
+                    />
+                    Add UV Laminate (+4ft waste)
+                  </label>
+                ) : (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={calcGrommets}
+                      onChange={(e) => setCalcGrommets(e.target.checked)}
+                    />
+                    Hemmed & Brass Banner Grommets
+                  </label>
+                )}
               </div>
 
               {calcPreview && (
                 <div className="flex items-center gap-3">
                   <div className="text-right text-xs">
                     <span className="text-slate-400">
-                      {calcPreview.result.piecesNeeded} pc ({calcPreview.result.linearFeet} lin ft) • Cost{" "}
+                      {calcPreview.result.piecesNeeded} roll width ({calcPreview.result.linearFeet} lin ft) • Cost{" "}
                       {formatCAD(calcPreview.result.subtotalCostCents)} →{" "}
                     </span>
                     <strong className="text-amber-400 text-sm">
-                      Sell {formatCAD(calcPreview.result.finalPriceCents)}
+                      Unit Sell {formatCAD(calcPreview.result.finalPriceCents)}
                     </strong>{" "}
                     <span className="text-emerald-400">
                       ({calcPreview.result.profitMarginPct}% margin)
@@ -407,7 +506,7 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
                   <button
                     type="button"
                     onClick={addCalculatedMaterialLine}
-                    className="rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-2"
+                    className="rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-2 cursor-pointer whitespace-nowrap"
                   >
                     + Insert into Quote
                   </button>
@@ -417,85 +516,116 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
 
             <div className="border-t border-slate-800 pt-3 flex flex-wrap items-center gap-2">
               <span className="text-[11px] uppercase tracking-wider text-slate-400 mr-1">
-                Quick Corex Sizes:
+                Quick Corex Sizes (4mm Coroplast):
               </span>
-              {["18x24", "24x36", "24x48", "36x48", "48x96"].map((sz) => (
-                <button
-                  key={sz}
-                  type="button"
-                  onClick={() => addCorexPreset(sz)}
-                  className="rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1"
-                >
-                  + Corex {sz}
-                </button>
-              ))}
+              {["12x18", "18x24", "24x36", "24x48", "36x48", "48x96"].map((sz) => {
+                const c = DEFAULT_COREX_SIZES.find((s) => s.sizeKey === sz);
+                const sellCents = c
+                  ? Math.round((c.baseCostCents / 100) * c.markup * 100)
+                  : 0;
+                return (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => addCorexPreset(sz)}
+                    className="rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1 cursor-pointer whitespace-nowrap"
+                  >
+                    + Corex {sz.replace("x", '"×')}" ({formatCAD(sellCents)})
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
+        {/* Column Headers for Line Items */}
+        <div className="hidden sm:grid sm:grid-cols-12 gap-2.5 px-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="sm:col-span-6">Description</div>
+          <div className="sm:col-span-2">Qty</div>
+          <div className="sm:col-span-2">Unit Price ($)</div>
+          <div className="sm:col-span-2 text-right">Line Total</div>
+        </div>
+
         {/* Line Items Table */}
         <div className="space-y-2.5">
-          {lines.map((line, index) => (
-            <div
-              key={index}
-              className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center bg-slate-50/70 p-3 rounded-xl border border-slate-200/80"
-            >
-              <div className="sm:col-span-7">
-                <input
-                  type="text"
-                  required
-                  value={line.description}
-                  onChange={(e) => {
-                    const copy = [...lines];
-                    copy[index] = { ...line, description: e.target.value };
-                    setLines(copy);
-                  }}
-                  placeholder="Description (e.g. 4ft x 8ft Alupanel Sign Face + Installation)"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                />
+          {lines.map((line, index) => {
+            let rowNetCents = 0;
+            try {
+              rowNetCents = lineNet(
+                line.quantity || "0",
+                toCents(line.unitPriceDollars || "0")
+              );
+            } catch {
+              rowNetCents = 0;
+            }
+            return (
+              <div
+                key={index}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center bg-slate-50/70 p-3 rounded-xl border border-slate-200/80"
+              >
+                <div className="sm:col-span-6">
+                  <input
+                    type="text"
+                    required
+                    aria-label={`Line ${index + 1} description`}
+                    value={line.description}
+                    onChange={(e) => {
+                      const copy = [...lines];
+                      copy[index] = { ...line, description: e.target.value };
+                      setLines(copy);
+                    }}
+                    placeholder="Description (e.g. 4ft x 8ft Alupanel Sign Face + Installation)"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <input
+                    type="text"
+                    required
+                    aria-label={`Line ${index + 1} quantity`}
+                    value={line.quantity}
+                    onChange={(e) => {
+                      const copy = [...lines];
+                      copy[index] = { ...line, quantity: e.target.value };
+                      setLines(copy);
+                    }}
+                    placeholder="Qty"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <input
+                    type="text"
+                    required
+                    aria-label={`Line ${index + 1} unit price`}
+                    value={line.unitPriceDollars}
+                    onChange={(e) => {
+                      const copy = [...lines];
+                      copy[index] = { ...line, unitPriceDollars: e.target.value };
+                      setLines(copy);
+                    }}
+                    placeholder="Unit Price ($)"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-2 flex items-center justify-end gap-2">
+                  <span className="font-mono text-sm font-bold text-slate-900">
+                    {formatCAD(rowNetCents)}
+                  </span>
+                  {lines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setLines(lines.filter((_, i) => i !== index))}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                      title="Remove line"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="sm:col-span-2">
-                <input
-                  type="text"
-                  required
-                  value={line.quantity}
-                  onChange={(e) => {
-                    const copy = [...lines];
-                    copy[index] = { ...line, quantity: e.target.value };
-                    setLines(copy);
-                  }}
-                  placeholder="Qty"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <input
-                  type="text"
-                  required
-                  value={line.unitPriceDollars}
-                  onChange={(e) => {
-                    const copy = [...lines];
-                    copy[index] = { ...line, unitPriceDollars: e.target.value };
-                    setLines(copy);
-                  }}
-                  placeholder="Unit Price ($)"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 font-mono"
-                />
-              </div>
-              <div className="sm:col-span-1 flex justify-end">
-                {lines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setLines(lines.filter((_, i) => i !== index))}
-                    className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"
-                    title="Remove line"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Live Totals Footer */}
@@ -528,10 +658,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
       {/* Notes & Terms */}
       <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+          <label
+            htmlFor="quote-scope-notes"
+            className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+          >
             Scope Notes (Shown on Quote & Installer Work Order)
           </label>
           <textarea
+            id="quote-scope-notes"
+            name="notes"
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -541,10 +676,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
         </div>
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label
+              htmlFor="quote-terms"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
+            >
               Terms & Conditions
             </label>
             <textarea
+              id="quote-terms"
+              name="customerTerms"
               rows={2}
               value={customerTerms}
               onChange={(e) => setCustomerTerms(e.target.value)}
@@ -552,10 +692,15 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
+            <label
+              htmlFor="quote-valid-until"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1"
+            >
               Valid Until
             </label>
             <input
+              id="quote-valid-until"
+              name="validUntil"
               type="date"
               value={validUntil}
               onChange={(e) => setValidUntil(e.target.value)}
@@ -569,7 +714,7 @@ export function QuoteBuilderForm({ customers }: { customers: CustomerRow[] }) {
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition shadow-sm disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition shadow-sm disabled:opacity-50 cursor-pointer"
         >
           <CheckCircle2 className="w-4 h-4 text-amber-400" />
           {isPending ? "Creating Quote…" : "Create Quote & Open Customer Approval Link"}

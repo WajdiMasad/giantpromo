@@ -50,45 +50,52 @@ export function AppShell({
     {
       href: "/",
       label: "Dashboard",
+      shortLabel: "Home",
       icon: LayoutDashboard,
       roles: ["admin", "office"],
     },
     {
       href: "/quotes",
       label: "Quotes",
+      shortLabel: "Quotes",
       icon: FileText,
       roles: ["admin", "office"],
     },
     {
       href: "/jobs",
       label: "Jobs & Sage Invoices",
+      shortLabel: "Jobs",
       icon: Briefcase,
       badge: readyToSendCount > 0 ? `${readyToSendCount} ready` : undefined,
       roles: ["admin", "office"],
     },
     {
+      href: "/installer",
+      label: "Installer Today View",
+      shortLabel: "Installer",
+      icon: HardHat,
+      roles: ["admin", "office", "installer"],
+    },
+    {
       href: "/equipment",
       label: "Equipment & Map",
+      shortLabel: "Rentals",
       icon: Signpost,
       roles: ["admin", "office", "installer"],
     },
     {
       href: "/billing",
       label: "Recurring Billing",
+      shortLabel: "Billing",
       icon: Repeat,
       roles: ["admin", "office"],
     },
     {
       href: "/customers",
       label: "Customers (Sage)",
+      shortLabel: "Clients",
       icon: Users,
       roles: ["admin", "office"],
-    },
-    {
-      href: "/installer",
-      label: "Installer Today View",
-      icon: HardHat,
-      roles: ["admin", "office", "installer"],
     },
   ].filter((item) => item.roles.includes(currentUser.role));
 
@@ -138,7 +145,7 @@ export function AppShell({
                 href={item.href}
                 className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
                   active
-                    ? "bg-slate-800/90 text-amber-400 shadow-inner"
+                    ? "bg-slate-800/90 text-amber-400 shadow-inner border border-slate-700/70"
                     : "text-slate-300 hover:bg-slate-900 hover:text-white"
                 }`}
               >
@@ -147,7 +154,7 @@ export function AppShell({
                   {item.label}
                 </span>
                 {item.badge && (
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap">
                     {item.badge}
                   </span>
                 )}
@@ -192,26 +199,36 @@ export function AppShell({
               {sageState.environment === "sandbox" ? "Sage Test Business" : "Live Books"}
             </span>
           </div>
-          <form action={toggleSageConnectionSimulationAction}>
-            <button
-              type="submit"
-              className="w-full text-[11px] font-medium text-slate-400 hover:text-slate-200 underline text-left pt-1"
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+            <form action={toggleSageConnectionSimulationAction}>
+              <button
+                type="submit"
+                className="text-[11px] font-medium text-slate-400 hover:text-slate-200 underline text-left"
+              >
+                {isConnected ? "Simulate outage" : "Reconnect Sage"}
+              </button>
+            </form>
+            <a
+              href="/api/sage/connect"
+              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300"
             >
-              {isConnected
-                ? "Simulate Sage outage (test fallback)"
-                : "Reconnect Sage Accounting"}
-            </button>
-          </form>
+              OAuth Sync ↗
+            </a>
+          </div>
         </div>
 
-        {/* User / Role Switcher Footer */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/60">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+        {/* User / Role Switcher Footer (pb-12 keeps clear of Next DevTools badge) */}
+        <div className="p-4 pb-12 border-t border-slate-800/80 bg-slate-950/60">
+          <label
+            htmlFor="sidebar-staff-switcher"
+            className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5 cursor-pointer"
+          >
             <Sparkles className="w-3 h-3 text-amber-400" />
             Active Staff Account
-          </div>
+          </label>
           <form action={switchActiveUserAction} className="space-y-2">
             <select
+              id="sidebar-staff-switcher"
               name="userId"
               defaultValue={currentUser.id}
               onChange={(e) => e.currentTarget.form?.requestSubmit()}
@@ -226,7 +243,7 @@ export function AppShell({
             </select>
           </form>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-            <span>{currentUser.email}</span>
+            <span className="truncate">{currentUser.email}</span>
             <span className="uppercase font-semibold text-amber-400">{currentUser.role}</span>
           </div>
         </div>
@@ -272,6 +289,7 @@ export function AppShell({
 
           <form action={switchActiveUserAction}>
             <select
+              id="mobile-staff-switcher"
               name="userId"
               defaultValue={currentUser.id}
               onChange={(e) => e.currentTarget.form?.requestSubmit()}
@@ -292,9 +310,9 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile PWA Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-slate-950 text-slate-300 border-t border-slate-800 flex items-center justify-around py-2 px-1 z-30">
-        {navItems.slice(0, 5).map((item) => {
+      {/* Mobile PWA Bottom Navigation (includes Installer & Clients) */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-slate-950 text-slate-300 border-t border-slate-800 flex items-center justify-around py-2 px-1 z-30 overflow-x-auto">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active =
             item.href === "/"
@@ -304,12 +322,12 @@ export function AppShell({
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${
-                active ? "text-amber-400" : "text-slate-400"
+              className={`flex flex-col items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition shrink-0 ${
+                active ? "text-amber-400 bg-slate-900" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <Icon className="w-4 h-4" />
-              <span className="truncate max-w-[68px]">{item.label.split(" ")[0]}</span>
+              <span className="whitespace-nowrap">{item.shortLabel}</span>
             </Link>
           );
         })}

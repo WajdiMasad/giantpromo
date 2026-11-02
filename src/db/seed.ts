@@ -111,7 +111,7 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         sageId: "sage-cust-104",
         name: "RBC Royal Bank — Dartmouth Crossing",
         companyName: "RBC Atlantic",
-        contactPerson: "facilities.atlantic@rbc.com",
+        contactPerson: "David MacKay — RBC Facilities",
         email: "facilities.atlantic@rbc.com",
         phone: "902-421-8000",
         addressLine1: "145 Hector Gate",

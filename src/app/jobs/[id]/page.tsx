@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, or } from "drizzle-orm";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -68,10 +68,18 @@ export default async function JobDetailPage(props: {
     .from(users)
     .where(eq(users.role, "installer"));
 
+  // Strictly scope activity log to this job (plus its originating quote if linked)
+  const logFilter = job.quoteId
+    ? or(
+        and(eq(activityLog.entityType, "job"), eq(activityLog.entityId, String(job.id))),
+        and(eq(activityLog.entityType, "quote"), eq(activityLog.entityId, String(job.quoteId)))
+      )
+    : and(eq(activityLog.entityType, "job"), eq(activityLog.entityId, String(job.id)));
+
   const logs = await db
     .select()
     .from(activityLog)
-    .where(eq(activityLog.entityId, String(job.id)))
+    .where(logFilter)
     .orderBy(desc(activityLog.createdAt));
 
   const mapsQuery = encodeURIComponent(
@@ -99,16 +107,16 @@ export default async function JobDetailPage(props: {
       <div className="rounded-3xl bg-slate-950 text-white p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="font-mono text-sm font-black px-3 py-1 rounded-lg bg-amber-500 text-slate-950">
+            <span className="font-mono text-sm font-black px-3 py-1 rounded-lg bg-amber-500 text-slate-950 whitespace-nowrap">
               {job.jobNumber
                 ? `JOB / SAGE INVOICE #${job.jobNumber}`
                 : "⏳ WAITING FOR SAGE NUMBER"}
             </span>
-            <span className="text-xs font-semibold uppercase px-3 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700">
+            <span className="text-xs font-semibold uppercase px-3 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700 whitespace-nowrap">
               Status: {job.status.replace("_", " ")}
             </span>
             <span
-              className={`text-xs font-semibold uppercase px-3 py-1 rounded-full ${
+              className={`text-xs font-semibold uppercase px-3 py-1 rounded-full whitespace-nowrap ${
                 job.sagePaymentStatus === "PAID"
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                   : job.sagePaymentStatus === "VOID"
@@ -118,6 +126,11 @@ export default async function JobDetailPage(props: {
             >
               Sage: {job.sagePaymentStatus}
             </span>
+            {job.priority === "rush" && (
+              <span className="text-xs font-bold uppercase px-3 py-1 rounded-full bg-rose-600 text-white whitespace-nowrap">
+                RUSH PRIORITY
+              </span>
+            )}
           </div>
 
           <h1 className="text-xl sm:text-2xl font-bold text-white pt-1">
@@ -253,7 +266,7 @@ export default async function JobDetailPage(props: {
 
             {files.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
-                No photos or files uploaded yet. Use the upload box above or the Installer Phone View.
+                No photos or files uploaded yet. Use the <strong>+ Upload Proof / Photo</strong> control above or the Installer Phone View.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

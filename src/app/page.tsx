@@ -122,26 +122,33 @@ export default async function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2.5">
           <a
             href="/api/sage/connect"
-            className={`inline-flex items-center gap-2 rounded-xl font-semibold text-sm px-4 py-2.5 transition shadow-xs ${
+            className={`inline-flex items-center gap-2 rounded-xl font-semibold text-xs px-3.5 py-2.5 transition shadow-xs whitespace-nowrap ${
               sageState.environment === "live" && sageState.accessToken
                 ? "border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900"
-                : "border border-amber-400 bg-amber-400 hover:bg-amber-300 text-slate-950"
+                : "border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
             }`}
           >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                sageState.environment === "live" && sageState.accessToken
+                  ? "bg-emerald-500"
+                  : "bg-amber-500"
+              }`}
+            />
             {sageState.environment === "live" && sageState.accessToken
               ? `Sage Live Connected • Next #${sageState.nextNumberPreview}`
               : "Connect Live Sage OAuth"}
           </a>
           <Link
             href="/installer"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm px-4 py-2.5 transition shadow-xs"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm px-4 py-2.5 transition shadow-xs whitespace-nowrap"
           >
             <HardHat className="w-4 h-4 text-amber-600" />
             Installer View
           </Link>
           <Link
             href="/quotes/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2.5 transition shadow-sm"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2.5 transition shadow-sm whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-amber-400" />
             New Quote
@@ -203,12 +210,15 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* 4 Executive KPI Cards (Pulled from Sage & Live Pipeline) */}
+      {/* 4 Executive KPI Cards (Interactive Drill-Downs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs">
+        <Link
+          href="/jobs"
+          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-emerald-400 p-5 shadow-xs hover:shadow-md transition block"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Sage Billed Revenue
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-emerald-700">
+              Sage Billed Revenue →
             </span>
             <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
@@ -217,16 +227,23 @@ export default async function DashboardPage() {
           <div className="text-2xl font-bold text-slate-900 mt-3">
             {formatCAD(totalInvoicedCents)}
           </div>
-          <div className="text-xs text-slate-600 mt-1.5 flex items-center justify-between">
-            <span>Collected: <strong className="text-emerald-700">{formatCAD(paidCents)}</strong></span>
-            <span>+{formatCAD(mrrCents)}/mo recurring</span>
+          <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap items-center justify-between gap-1">
+            <span>
+              Collected: <strong className="text-emerald-700">{formatCAD(paidCents)}</strong>
+            </span>
+            <span className="text-[11px] font-medium text-slate-500">
+              +{formatCAD(mrrCents)}/mo MRR
+            </span>
           </div>
-        </div>
+        </Link>
 
-        <div className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs">
+        <Link
+          href="/quotes"
+          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-blue-400 p-5 shadow-xs hover:shadow-md transition block"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Quotes & Win Rate
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-blue-700">
+              Quotes & Win Rate →
             </span>
             <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
@@ -244,12 +261,15 @@ export default async function DashboardPage() {
               {formatCAD(openQuotes.reduce((acc, q) => acc + q.quote.totalCents, 0))}
             </strong>
           </div>
-        </div>
+        </Link>
 
-        <div className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs">
+        <Link
+          href="/jobs"
+          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-rose-400 p-5 shadow-xs hover:shadow-md transition block"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Overdue in Sage
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-rose-700">
+              Overdue in Sage →
             </span>
             <div className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
               <AlertCircle className="w-4 h-4" />
@@ -261,12 +281,15 @@ export default async function DashboardPage() {
           <div className="text-xs text-slate-600 mt-1.5">
             {overdueInvoices.length} overdue invoice{overdueInvoices.length === 1 ? "" : "s"} past Net 30
           </div>
-        </div>
+        </Link>
 
-        <div className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs">
+        <Link
+          href="/equipment"
+          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-amber-400 p-5 shadow-xs hover:shadow-md transition block"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Rental Fleet Active
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-amber-700">
+              Rental Fleet Active →
             </span>
             <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <Signpost className="w-4 h-4" />
@@ -279,7 +302,7 @@ export default async function DashboardPage() {
           <div className="text-xs text-slate-600 mt-1.5">
             {activePlans.length} active recurring billing plans
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Two-Column Pipeline: Active Jobs (Sage Master Numbered) + Quotes Pipeline */}
@@ -429,10 +452,22 @@ export default async function DashboardPage() {
                 {allSageInvoices.slice(0, 6).map((inv) => {
                   const isOverdue =
                     inv.status === "UNPAID" && inv.dueDate && inv.dueDate < today;
+                  const linkedJob = allJobs.find(
+                    ({ job }) => job.jobNumber === inv.invoiceNumber
+                  )?.job;
                   return (
                     <tr key={inv.id} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4 font-mono font-bold text-xs text-slate-900">
-                        #{inv.invoiceNumber}
+                      <td className="py-3 px-4 font-mono font-bold text-xs text-slate-900 whitespace-nowrap">
+                        {linkedJob ? (
+                          <Link
+                            href={`/jobs/${linkedJob.id}`}
+                            className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 hover:bg-slate-800"
+                          >
+                            #{inv.invoiceNumber}
+                          </Link>
+                        ) : (
+                          <span>#{inv.invoiceNumber}</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-medium text-slate-900 text-xs sm:text-sm">
@@ -440,10 +475,10 @@ export default async function DashboardPage() {
                         </div>
                         <div className="text-[11px] text-slate-500">{inv.reference}</div>
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-600">
+                      <td className="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">
                         {inv.dueDate || "—"}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         {inv.status === "PAID" ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <CheckCircle2 className="w-3 h-3" /> PAID
@@ -462,7 +497,7 @@ export default async function DashboardPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-slate-900">
+                      <td className="py-3 px-4 text-right font-semibold text-slate-900 whitespace-nowrap">
                         {formatCAD(inv.totalCents)}
                       </td>
                     </tr>
@@ -482,17 +517,26 @@ export default async function DashboardPage() {
             </p>
           </div>
           <div className="p-4 space-y-3.5">
-            {recentActivity.map((act) => (
-              <div key={act.id} className="flex items-start gap-3 text-xs">
-                <div className="h-2 w-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-slate-900">{act.summary}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    {act.actorName} • {new Date(act.createdAt).toLocaleString("en-CA")}
+            {recentActivity.map((act) => {
+              const dotColor = act.action.includes("approved") || act.action.includes("paid") || act.action.includes("live_synced")
+                ? "bg-emerald-500"
+                : act.action.includes("installed")
+                  ? "bg-purple-500"
+                  : act.action.includes("voided")
+                    ? "bg-rose-500"
+                    : "bg-amber-500";
+              return (
+                <div key={act.id} className="flex items-start gap-3 text-xs">
+                  <div className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-1.5 shrink-0`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-slate-900">{act.summary}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {act.actorName} • {new Date(act.createdAt).toLocaleString("en-CA")}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

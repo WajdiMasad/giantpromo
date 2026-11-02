@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { MapPin, Phone, Plus, Search } from "lucide-react";
+import { Mail, MapPin, Phone, Plus, Search } from "lucide-react";
 import { createCustomerAction } from "@/app/actions";
 import { PROVINCE_CODES } from "@/lib/tax";
 
@@ -54,7 +54,12 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <label htmlFor="customer-search-input" className="sr-only">
+            Search customers
+          </label>
           <input
+            id="customer-search-input"
+            name="customerSearch"
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -66,7 +71,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
         <button
           type="button"
           onClick={() => setShowAdd((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 cursor-pointer"
         >
           <Plus className="w-4 h-4 text-amber-400" />
           {showAdd ? "Close Form" : "Add Customer (Sync to Sage)"}
@@ -213,7 +218,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs py-2.5 px-4"
+                className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs py-2.5 px-4 cursor-pointer"
               >
                 {isPending ? "Saving…" : "Save & Sync to Sage"}
               </button>
@@ -223,48 +228,74 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filtered.map((c) => (
-          <div
-            key={c.id}
-            className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between gap-3"
-          >
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-bold text-base text-slate-900">{c.name}</h3>
-                <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                  {c.sageId || "Sage Synced"}
-                </span>
-              </div>
-              <div className="text-xs text-slate-600 mt-1 flex flex-wrap items-center gap-3">
-                {c.contactPerson && <span>Contact: {c.contactPerson}</span>}
-                {c.email && <span>{c.email}</span>}
-                {c.phone && (
-                  <span className="inline-flex items-center gap-1 font-medium text-slate-800">
-                    <Phone className="w-3 h-3" /> {c.phone}
+        {filtered.map((c) => {
+          const cleanContact =
+            c.contactPerson && !c.contactPerson.includes("@")
+              ? c.contactPerson
+              : null;
+          return (
+            <div
+              key={c.id}
+              className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between gap-3"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-bold text-base text-slate-900">{c.name}</h3>
+                  <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">
+                    {c.sageId || "Sage Synced"}
                   </span>
+                </div>
+                <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap items-center gap-3">
+                  {cleanContact && (
+                    <span className="font-medium text-slate-700">
+                      Contact: {cleanContact}
+                    </span>
+                  )}
+                  {c.email && (
+                    <a
+                      href={`mailto:${c.email}`}
+                      className="inline-flex items-center gap-1 text-slate-700 hover:text-amber-600 hover:underline"
+                    >
+                      <Mail className="w-3 h-3 text-slate-400" />
+                      {c.email}
+                    </a>
+                  )}
+                  {c.phone && (
+                    <a
+                      href={`tel:${c.phone}`}
+                      className="inline-flex items-center gap-1 font-semibold text-slate-800 hover:text-amber-600 hover:underline whitespace-nowrap"
+                    >
+                      <Phone className="w-3 h-3 text-slate-400" /> {c.phone}
+                    </a>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    {c.addressLine1}, {c.city}, {c.province} {c.postalCode}
+                  </span>
+                </div>
+                {c.siteNotes && (
+                  <div className="mt-2.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-950">
+                    <strong>Site Note:</strong> {c.siteNotes}
+                  </div>
                 )}
               </div>
-              <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                {c.addressLine1}, {c.city}, {c.province} {c.postalCode}
-              </div>
-              {c.siteNotes && (
-                <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-950">
-                  <strong>Site Note:</strong> {c.siteNotes}
-                </div>
-              )}
-            </div>
 
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
-              <Link
-                href="/quotes/new"
-                className="text-xs font-semibold text-amber-600 hover:underline"
-              >
-                + New Quote for {c.name} →
-              </Link>
+              <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  {c.province} Tax Rules Active
+                </span>
+                <Link
+                  href={`/quotes/new?customerId=${c.id}`}
+                  className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:underline"
+                >
+                  + New Quote for {c.name} →
+                </Link>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -5,7 +5,14 @@ import { QuoteBuilderForm } from "@/components/QuoteBuilderForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewQuotePage() {
+export default async function NewQuotePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ customerId?: string }>;
+}) {
+  const params = await searchParams;
+  const requestedCustomerId = params.customerId ? Number(params.customerId) : undefined;
+
   const db = await getDb();
   const customerList = await db
     .select()
@@ -21,7 +28,10 @@ export default async function NewQuotePage() {
         </p>
       </div>
 
-      <QuoteBuilderForm customers={customerList} />
+      <QuoteBuilderForm
+        customers={customerList}
+        initialCustomerId={requestedCustomerId}
+      />
     </div>
   );
 }

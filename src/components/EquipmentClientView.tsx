@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import {
+  AlertTriangle,
   Calendar,
   CheckCircle2,
   ExternalLink,
@@ -62,18 +63,30 @@ export function EquipmentClientView({
     rentals.find((r) => r.status === "active")?.id ?? null
   );
 
+  const initialUnit =
+    equipmentList.find((e) => e.status === "available") ?? equipmentList[0];
+  const initialCustomer = customers[0];
+
   const [equipmentId, setEquipmentId] = useState<number>(
-    equipmentList.find((e) => e.status === "available")?.id ??
-      equipmentList[0]?.id ??
-      1
+    initialUnit?.id ?? 1
   );
-  const [customerId, setCustomerId] = useState<number>(customers[0]?.id ?? 1);
+  const [customerId, setCustomerId] = useState<number>(
+    initialCustomer?.id ?? 1
+  );
   const [startDate, setStartDate] = useState<string>(
     new Date().toISOString().slice(0, 10)
   );
   const [endDate, setEndDate] = useState<string>("");
-  const [monthlyRateDollars, setMonthlyRateDollars] = useState<string>("175.00");
-  const [locationAddress, setLocationAddress] = useState<string>("");
+  const [monthlyRateDollars, setMonthlyRateDollars] = useState<string>(
+    initialUnit
+      ? centsToDecimalString(initialUnit.defaultMonthlyRateCents)
+      : "175.00"
+  );
+  const [locationAddress, setLocationAddress] = useState<string>(
+    initialCustomer
+      ? `${initialCustomer.addressLine1 ?? ""}, ${initialCustomer.city ?? "Halifax"}`
+      : ""
+  );
   const [poReference, setPoReference] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
@@ -86,6 +99,15 @@ export function EquipmentClientView({
   const selectedRental =
     activeRentals.find((r) => r.id === selectedPinId) ?? activeRentals[0];
 
+  const selectedFormUnitBookings = activeRentals.filter(
+    (r) => r.equipmentId === equipmentId
+  );
+
+  function selectUnitForBooking(unit: EquipmentItem) {
+    setEquipmentId(unit.id);
+    setMonthlyRateDollars(centsToDecimalString(unit.defaultMonthlyRateCents));
+  }
+
   // Bounding box for Halifax / Bedford / Dartmouth map canvas
   // Lat range: 44.63 (South End Halifax) -> 44.75 (Bedford)
   // Lng range: -63.68 (Bedford) -> -63.53 (Dartmouth Crossing)
@@ -94,8 +116,8 @@ export function EquipmentClientView({
     const maxLat = 44.75;
     const minLng = -63.68;
     const maxLng = -63.53;
-    const xPct = Math.min(92, Math.max(8, ((lng - minLng) / (maxLng - minLng)) * 100));
-    const yPct = Math.min(88, Math.max(12, (1 - (lat - minLat) / (maxLat - minLat)) * 100));
+    const xPct = Math.min(90, Math.max(10, ((lng - minLng) / (maxLng - minLng)) * 100));
+    const yPct = Math.min(86, Math.max(14, (1 - (lat - minLat) / (maxLat - minLat)) * 100));
     return { xPct, yPct };
   }
 
@@ -116,7 +138,7 @@ export function EquipmentClientView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Interactive HRM Deployment Map */}
         <div className="lg:col-span-7 rounded-3xl bg-slate-950 text-white border border-slate-800 p-6 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-amber-400" />
@@ -126,9 +148,14 @@ export function EquipmentClientView({
                 Click any deployed unit pin to inspect location, customer, or return equipment
               </p>
             </div>
-            <span className="text-xs font-mono font-semibold text-amber-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-              {activeRentals.length} Deployed
-            </span>
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="font-semibold text-amber-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800 whitespace-nowrap">
+                {activeRentals.length} Deployed
+              </span>
+              <span className="font-semibold text-emerald-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800 whitespace-nowrap">
+                {equipmentList.length - activeRentals.length} In Yard
+              </span>
+            </div>
           </div>
 
           {/* Stylized Interactive HRM Map Canvas */}
@@ -136,7 +163,7 @@ export function EquipmentClientView({
             {/* Geographic Water & Highway Grid Overlay */}
             <svg
               viewBox="0 0 600 320"
-              className="absolute inset-0 w-full h-full opacity-35 pointer-events-none"
+              className="absolute inset-0 w-full h-full opacity-40 pointer-events-none"
             >
               {/* Bedford Basin & Halifax Harbour */}
               <path
@@ -160,28 +187,28 @@ export function EquipmentClientView({
                 strokeWidth="2"
                 fill="none"
               />
-              <text x="95" y="45" fill="#94a3b8" fontSize="11" fontWeight="600">
-                BEDFORD HWY
+              <text x="24" y="34" fill="#94a3b8" fontSize="10" fontWeight="700" letterSpacing="0.06em">
+                BEDFORD HWY (102)
               </text>
-              <text x="165" y="225" fill="#94a3b8" fontSize="11" fontWeight="600">
-                KEMPT RD / HALIFAX
+              <text x="34" y="294" fill="#94a3b8" fontSize="10" fontWeight="700" letterSpacing="0.06em">
+                KEMPT RD / HALIFAX PENINSULA
               </text>
-              <text x="360" y="90" fill="#94a3b8" fontSize="11" fontWeight="600">
+              <text x="375" y="42" fill="#94a3b8" fontSize="10" fontWeight="700" letterSpacing="0.06em">
                 BURNSIDE / DARTMOUTH CROSSING
               </text>
             </svg>
 
             {/* Giant Promotions HQ Pin (3797 Mackintosh St) */}
             {(() => {
-              const hq = projectToCanvas(44.6665, -63.616);
+              const hq = projectToCanvas(44.656, -63.635);
               return (
                 <div
                   style={{ left: `${hq.xPct}%`, top: `${hq.yPct}%` }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 z-10"
                   title="Giant Promotions HQ — 3797 Mackintosh St"
                 >
-                  <div className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-600 text-[10px] font-bold text-slate-300 whitespace-nowrap">
-                    HQ (3797 Mackintosh)
+                  <div className="px-2 py-0.5 rounded bg-slate-800/95 border border-slate-600 text-[10px] font-bold text-slate-300 whitespace-nowrap shadow">
+                    ★ HQ (3797 Mackintosh)
                   </div>
                 </div>
               );
@@ -189,7 +216,7 @@ export function EquipmentClientView({
 
             {/* Deployed Rental Pins */}
             {activeRentals.map((r, idx) => {
-              const pos = projectToCanvas(r.lat + idx * 0.003, r.lng - idx * 0.004);
+              const pos = projectToCanvas(r.lat + idx * 0.004, r.lng - idx * 0.005);
               const isSelected = selectedRental?.id === r.id;
               return (
                 <button
@@ -197,13 +224,13 @@ export function EquipmentClientView({
                   type="button"
                   onClick={() => setSelectedPinId(r.id)}
                   style={{ left: `${pos.xPct}%`, top: `${pos.yPct}%` }}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 transition z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-mono text-xs font-bold shadow-lg ${
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 transition z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-mono text-xs font-bold shadow-lg whitespace-nowrap cursor-pointer ${
                     isSelected
                       ? "bg-amber-400 text-slate-950 ring-4 ring-amber-400/30 scale-110"
                       : "bg-slate-950/90 text-amber-400 border border-amber-500/50 hover:scale-105"
                   }`}
                 >
-                  <MapPin className="w-3.5 h-3.5" />
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
                   {r.equipmentCode}
                 </button>
               );
@@ -215,7 +242,7 @@ export function EquipmentClientView({
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-amber-500 text-slate-950">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-amber-500 text-slate-950 whitespace-nowrap">
                     {selectedRental.equipmentCode}
                   </span>
                   <span className="font-bold text-sm text-white">
@@ -227,7 +254,8 @@ export function EquipmentClientView({
                   {selectedRental.locationAddress}
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  Since {selectedRental.startDate} •{" "}
+                  Since {selectedRental.startDate}{" "}
+                  {selectedRental.endDate ? `→ Ends ${selectedRental.endDate}` : "• Ongoing Monthly"} •{" "}
                   {formatCAD(selectedRental.monthlyRateCents)}/mo
                 </div>
               </div>
@@ -239,7 +267,7 @@ export function EquipmentClientView({
                   )}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-200 px-3 py-2"
+                  className="inline-flex items-center gap-1 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-200 px-3 py-2 whitespace-nowrap"
                 >
                   Street View <ExternalLink className="w-3 h-3" />
                 </a>
@@ -257,7 +285,7 @@ export function EquipmentClientView({
                         );
                     });
                   }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2"
+                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 whitespace-nowrap cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Return & Stop Billing
                 </button>
@@ -299,17 +327,22 @@ export function EquipmentClientView({
               <Calendar className="w-4 h-4 text-amber-600" />
               Book Equipment Rental
             </h2>
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
               <ShieldCheck className="w-3 h-3" /> Double-Book Guard
             </span>
           </div>
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label
+                htmlFor="rental-unit-select"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Equipment Unit
               </label>
               <select
+                id="rental-unit-select"
+                name="equipmentId"
                 value={equipmentId}
                 onChange={(e) => {
                   const id = Number(e.target.value);
@@ -325,23 +358,39 @@ export function EquipmentClientView({
               >
                 {equipmentList.map((eqItem) => (
                   <option key={eqItem.id} value={eqItem.id}>
-                    {eqItem.code} — {eqItem.name} ({eqItem.status.toUpperCase()})
+                    {eqItem.code} — {eqItem.name} ({formatCAD(eqItem.defaultMonthlyRateCents)}/mo •{" "}
+                    {eqItem.status.toUpperCase()})
                   </option>
                 ))}
               </select>
+              {selectedFormUnitBookings.length > 0 && (
+                <div className="mt-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-900 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    Currently rented to <strong>{selectedFormUnitBookings[0]!.customerName}</strong> (
+                    {selectedFormUnitBookings[0]!.startDate} →{" "}
+                    {selectedFormUnitBookings[0]!.endDate || "Ongoing"}). Overlapping dates will be blocked.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label
+                htmlFor="rental-customer-select"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Customer (Sage)
               </label>
               <select
+                id="rental-customer-select"
+                name="customerId"
                 value={customerId}
                 onChange={(e) => {
                   const id = Number(e.target.value);
                   setCustomerId(id);
                   const cust = customers.find((c) => c.id === id);
-                  if (cust && !locationAddress) {
+                  if (cust) {
                     setLocationAddress(
                       `${cust.addressLine1 ?? ""}, ${cust.city ?? "Halifax"}`
                     );
@@ -359,10 +408,15 @@ export function EquipmentClientView({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="rental-start-date"
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   Start Date
                 </label>
                 <input
+                  id="rental-start-date"
+                  name="startDate"
                   type="date"
                   required
                   value={startDate}
@@ -371,10 +425,15 @@ export function EquipmentClientView({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="rental-end-date"
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   End Date (Blank = Monthly)
                 </label>
                 <input
+                  id="rental-end-date"
+                  name="endDate"
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
@@ -385,10 +444,15 @@ export function EquipmentClientView({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="rental-rate-dollars"
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   Monthly Rate ($)
                 </label>
                 <input
+                  id="rental-rate-dollars"
+                  name="monthlyRateDollars"
                   type="text"
                   required
                   value={monthlyRateDollars}
@@ -397,10 +461,15 @@ export function EquipmentClientView({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="rental-po-ref"
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   PO / Reference
                 </label>
                 <input
+                  id="rental-po-ref"
+                  name="poReference"
                   type="text"
                   value={poReference}
                   onChange={(e) => setPoReference(e.target.value)}
@@ -411,10 +480,15 @@ export function EquipmentClientView({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label
+                htmlFor="rental-placement-address"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Placement Address (Shown on Map)
               </label>
               <input
+                id="rental-placement-address"
+                name="locationAddress"
                 type="text"
                 required
                 value={locationAddress}
@@ -425,10 +499,15 @@ export function EquipmentClientView({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label
+                htmlFor="rental-notes"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Sign Copy / Placement Notes
               </label>
               <input
+                id="rental-notes"
+                name="notes"
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -441,7 +520,7 @@ export function EquipmentClientView({
           <button
             type="submit"
             disabled={isPending}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm py-3 px-4 transition disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm py-3 px-4 transition disabled:opacity-50 cursor-pointer"
           >
             <Plus className="w-4 h-4 text-amber-400" />
             {isPending ? "Checking Availability & Booking…" : "Book Equipment & Start Recurring Plan"}
@@ -480,7 +559,7 @@ export function EquipmentClientView({
                   <tr key={eqItem.id} className="hover:bg-slate-50/70">
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400 whitespace-nowrap shrink-0">
                           {eqItem.code}
                         </span>
                         <span className="font-semibold text-slate-900">
@@ -491,18 +570,18 @@ export function EquipmentClientView({
                         {eqItem.conditionNotes}
                       </div>
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-4 whitespace-nowrap">
                       {unitRentals.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
                           Rented
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                           <CheckCircle2 className="w-3 h-3" /> Available
                         </span>
                       )}
                     </td>
-                    <td className="py-4 px-4 font-semibold text-slate-900">
+                    <td className="py-4 px-4 font-semibold text-slate-900 whitespace-nowrap">
                       {formatCAD(eqItem.defaultMonthlyRateCents)}/mo
                     </td>
                     <td className="py-4 px-4">
@@ -522,8 +601,8 @@ export function EquipmentClientView({
                         </div>
                       )}
                     </td>
-                    <td className="py-4 px-4 text-right">
-                      {unitRentals[0] && (
+                    <td className="py-4 px-4 text-right whitespace-nowrap">
+                      {unitRentals[0] ? (
                         <button
                           type="button"
                           disabled={isPending}
@@ -540,9 +619,21 @@ export function EquipmentClientView({
                                 );
                             });
                           }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3 py-1.5"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3 py-1.5 whitespace-nowrap cursor-pointer"
                         >
                           <RotateCcw className="w-3 h-3 text-emerald-600" /> Return Unit
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => selectUnitForBooking(eqItem)}
+                          className={`inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-3 py-1.5 whitespace-nowrap cursor-pointer transition ${
+                            equipmentId === eqItem.id
+                              ? "bg-amber-100 text-amber-900 border border-amber-300"
+                              : "border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {equipmentId === eqItem.id ? "✓ Selected in Form" : "Select Unit →"}
                         </button>
                       )}
                     </td>

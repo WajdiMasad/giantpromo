@@ -38,13 +38,32 @@ export default async function InstallerPortalPage() {
     return true;
   });
 
+  // Sort active & rush jobs above already-installed jobs
+  const statusWeight = (status: string, priority: string) => {
+    if (status === "in_progress") return priority === "rush" ? 0 : 1;
+    if (status === "scheduled" || status === "approved") return priority === "rush" ? 2 : 3;
+    return 10; // installed jobs go below active installs
+  };
+
   const today = new Date().toISOString().slice(0, 10);
-  const todayJobs = activeRows.filter(({ job }) => job.scheduledDate === today);
-  const upcomingJobs = activeRows.filter(({ job }) => job.scheduledDate !== today);
+  const todayJobs = activeRows
+    .filter(({ job }) => job.scheduledDate === today)
+    .sort(
+      (a, b) =>
+        statusWeight(a.job.status, a.job.priority) -
+        statusWeight(b.job.status, b.job.priority)
+    );
+  const upcomingJobs = activeRows
+    .filter(({ job }) => job.scheduledDate !== today)
+    .sort(
+      (a, b) =>
+        statusWeight(a.job.status, a.job.priority) -
+        statusWeight(b.job.status, b.job.priority)
+    );
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="rounded-3xl bg-slate-950 text-white p-6 flex items-center justify-between gap-4">
+      <div className="rounded-3xl bg-slate-950 text-white p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3.5">
           <div className="h-12 w-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
             <HardHat className="w-6 h-6" />
@@ -56,9 +75,11 @@ export default async function InstallerPortalPage() {
             </p>
           </div>
         </div>
-        <div className="text-right hidden sm:block">
-          <div className="text-xs text-slate-400">Today</div>
-          <div className="font-mono text-sm font-bold text-amber-400">{today}</div>
+        <div className="flex sm:flex-col items-center sm:items-end justify-between border-t sm:border-t-0 border-slate-800 pt-2.5 sm:pt-0">
+          <div className="text-xs text-slate-400">Today&apos;s Dispatch</div>
+          <div className="font-mono text-sm font-bold text-amber-400 whitespace-nowrap">
+            {today}
+          </div>
         </div>
       </div>
 
