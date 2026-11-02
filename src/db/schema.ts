@@ -1,0 +1,445 @@
+import {
+  boolean,
+  doublePrecision,
+  integer,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+
+export type UserRole = "admin" | "office" | "installer";
+
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    role: text("role").$type<UserRole>().notNull().default("office"),
+    phone: text("phone").default(""),
+    avatarUrl: text("avatar_url"),
+    isActive: boolean("is_active").notNull().default(true),
+    googleRefreshToken: text("google_refresh_token"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("users_email_idx").on(t.email)]
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sessions_token_hash_idx").on(t.tokenHash)]
+);
+
+export const customers = pgTable(
+  "customers",
+  {
+    id: serial("id").primaryKey(),
+    sageId: text("sage_id"),
+    name: text("name").notNull(),
+    companyName: text("company_name").default(""),
+    contactPerson: text("contact_person").default(""),
+    email: text("email").default(""),
+    phone: text("phone").default(""),
+    addressLine1: text("address_line1").default(""),
+    addressLine2: text("address_line2").default(""),
+    city: text("city").default("Halifax"),
+    province: text("province").notNull().default("NS"),
+    postalCode: text("postal_code").default(""),
+    country: text("country").notNull().default("Canada"),
+    paymentTerms: text("payment_terms").notNull().default("Net 30"),
+    taxExempt: boolean("tax_exempt").notNull().default(false),
+    siteNotes: text("site_notes").default(""),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    isActive: boolean("is_active").notNull().default(true),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("customers_sage_id_idx").on(t.sageId)]
+);
+
+export type QuoteStatus =
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "approved"
+  | "declined"
+  | "expired";
+
+export const quotes = pgTable(
+  "quotes",
+  {
+    id: serial("id").primaryKey(),
+    quoteNumber: text("quote_number").notNull(),
+    publicToken: text("public_token").notNull(),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    title: text("title").notNull(),
+    poReference: text("po_reference").default(""),
+    siteAddress: text("site_address").default(""),
+    siteProvince: text("site_province").notNull().default("NS"),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    status: text("status").$type<QuoteStatus>().notNull().default("draft"),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    taxRatePpm: integer("tax_rate_ppm").notNull().default(140000),
+    taxLabel: text("tax_label").notNull().default("14% HST"),
+    taxCents: integer("tax_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    notes: text("notes").default(""),
+    customerTerms: text("customer_terms").default(""),
+    validUntil: text("valid_until"), // YYYY-MM-DD
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sentByUserId: integer("sent_by_user_id").references(() => users.id),
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByName: text("approved_by_name"),
+    approvedByEmail: text("approved_by_email"),
+    approvedIp: text("approved_ip"),
+    declineReason: text("decline_reason"),
+    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("quotes_number_idx").on(t.quoteNumber),
+    uniqueIndex("quotes_public_token_idx").on(t.publicToken),
+  ]
+);
+
+export const quoteItems = pgTable("quote_items", {
+  id: serial("id").primaryKey(),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotes.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  description: text("description").notNull(),
+  quantity: text("quantity").notNull().default("1"),
+  unitPriceCents: integer("unit_price_cents").notNull().default(0),
+  netCents: integer("net_cents").notNull().default(0),
+  taxCents: integer("tax_cents").notNull().default(0),
+  totalCents: integer("total_cents").notNull().default(0),
+  taxExempt: boolean("tax_exempt").notNull().default(false),
+  calculatorMetaJson: text("calculator_meta_json"),
+});
+
+export type JobStatus =
+  | "approved"
+  | "scheduled"
+  | "in_progress"
+  | "installed"
+  | "invoiced"
+  | "paid"
+  | "cancelled";
+
+export type SageSyncStatus = "pending_number" | "synced" | "failed" | "voided";
+export type SagePaymentStatus = "DRAFT" | "UNPAID" | "PART_PAID" | "PAID" | "VOID";
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: serial("id").primaryKey(),
+    /**
+     * Master numbering rule (§2a): jobNumber is ALWAYS the Sage invoice number
+     * (e.g. "232016"). Null only while sageSyncStatus = 'pending_number'.
+     */
+    jobNumber: text("job_number"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    quoteId: integer("quote_id").references(() => quotes.id),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    title: text("title").notNull(),
+    description: text("description").default(""),
+    poReference: text("po_reference").default(""),
+    siteAddress: text("site_address").default(""),
+    siteProvince: text("site_province").notNull().default("NS"),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    status: text("status").$type<JobStatus>().notNull().default("approved"),
+    priority: text("priority")
+      .$type<"normal" | "rush" | "urgent">()
+      .notNull()
+      .default("normal"),
+    scheduledDate: text("scheduled_date"), // YYYY-MM-DD
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    taxRatePpm: integer("tax_rate_ppm").notNull().default(140000),
+    taxLabel: text("tax_label").notNull().default("14% HST"),
+    taxCents: integer("tax_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    installerNotes: text("installer_notes").default(""),
+    internalNotes: text("internal_notes").default(""),
+    driveFolderId: text("drive_folder_id"),
+    driveFolderUrl: text("drive_folder_url"),
+    // Sage master invoice link
+    sageInvoiceId: text("sage_invoice_id"),
+    sageInvoiceNumber: text("sage_invoice_number"),
+    sageSyncStatus: text("sage_sync_status")
+      .$type<SageSyncStatus>()
+      .notNull()
+      .default("pending_number"),
+    sageSyncError: text("sage_sync_error"),
+    sagePaymentStatus: text("sage_payment_status")
+      .$type<SagePaymentStatus>()
+      .notNull()
+      .default("UNPAID"),
+    invoiceSentAt: timestamp("invoice_sent_at", { withTimezone: true }),
+    invoiceSentByUserId: integer("invoice_sent_by_user_id").references(() => users.id),
+    invoiceSentToEmail: text("invoice_sent_to_email"),
+    voidReason: text("void_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("jobs_job_number_idx").on(t.jobNumber),
+    uniqueIndex("jobs_idempotency_key_idx").on(t.idempotencyKey),
+  ]
+);
+
+export const jobItems = pgTable("job_items", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  description: text("description").notNull(),
+  quantity: text("quantity").notNull().default("1"),
+  unitPriceCents: integer("unit_price_cents").notNull().default(0),
+  netCents: integer("net_cents").notNull().default(0),
+  taxCents: integer("tax_cents").notNull().default(0),
+  totalCents: integer("total_cents").notNull().default(0),
+  taxExempt: boolean("tax_exempt").notNull().default(false),
+});
+
+export const jobAssignments = pgTable(
+  "job_assignments",
+  {
+    id: serial("id").primaryKey(),
+    jobId: integer("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("job_assignments_unique_idx").on(t.jobId, t.userId)]
+);
+
+export type JobFileKind =
+  | "proof"
+  | "artwork"
+  | "before_photo"
+  | "after_photo"
+  | "install_photo"
+  | "document";
+
+export const jobFiles = pgTable("job_files", {
+  id: serial("id").primaryKey(),
+  jobId: integer("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedByName: text("uploaded_by_name").notNull().default("Staff"),
+  kind: text("kind").$type<JobFileKind>().notNull().default("install_photo"),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull().default("image/jpeg"),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  storagePath: text("storage_path").notNull(),
+  caption: text("caption").default(""),
+  driveFileId: text("drive_file_id"),
+  driveUrl: text("drive_url"),
+  driveMirrorStatus: text("drive_mirror_status")
+    .$type<"pending" | "synced" | "failed">()
+    .notNull()
+    .default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type EquipmentStatus = "available" | "rented" | "maintenance" | "retired";
+
+export const equipment = pgTable(
+  "equipment",
+  {
+    id: serial("id").primaryKey(),
+    code: text("code").notNull(), // e.g. MS-001
+    name: text("name").notNull(),
+    category: text("category").notNull().default("Mobile Sign"),
+    serialNumber: text("serial_number").default(""),
+    defaultMonthlyRateCents: integer("default_monthly_rate_cents").notNull().default(15000),
+    status: text("status").$type<EquipmentStatus>().notNull().default("available"),
+    conditionNotes: text("condition_notes").default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("equipment_code_idx").on(t.code)]
+);
+
+export type RentalStatus = "scheduled" | "active" | "returned" | "cancelled";
+
+export const equipmentRentals = pgTable("equipment_rentals", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id")
+    .notNull()
+    .references(() => equipment.id),
+  customerId: integer("customer_id")
+    .notNull()
+    .references(() => customers.id),
+  startDate: text("start_date").notNull(), // YYYY-MM-DD
+  endDate: text("end_date"), // YYYY-MM-DD (null = open-ended monthly rental)
+  returnedAt: timestamp("returned_at", { withTimezone: true }),
+  monthlyRateCents: integer("monthly_rate_cents").notNull().default(15000),
+  locationAddress: text("location_address").notNull().default(""),
+  lat: doublePrecision("lat"),
+  lng: doublePrecision("lng"),
+  status: text("status").$type<RentalStatus>().notNull().default("active"),
+  notes: text("notes").default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type BillingPlanStatus = "active" | "paused" | "ended";
+export type BillingPlanKind = "equipment_rental" | "maintenance" | "storage" | "advertising_space" | "service";
+
+export const recurringBillingPlans = pgTable("recurring_billing_plans", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id")
+    .notNull()
+    .references(() => customers.id),
+  rentalId: integer("rental_id").references(() => equipmentRentals.id),
+  kind: text("kind").$type<BillingPlanKind>().notNull().default("equipment_rental"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  poReference: text("po_reference").default(""),
+  province: text("province").notNull().default("NS"),
+  monthlyAmountCents: integer("monthly_amount_cents").notNull(),
+  startDate: text("start_date").notNull(), // YYYY-MM-DD
+  endDate: text("end_date"), // YYYY-MM-DD when ended
+  status: text("status").$type<BillingPlanStatus>().notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type BatchStatus = "draft" | "approved_scheduled" | "sent" | "dry_run";
+
+export const recurringBillingBatches = pgTable(
+  "recurring_billing_batches",
+  {
+    id: serial("id").primaryKey(),
+    monthKey: text("month_key").notNull(), // YYYY-MM (e.g. "2026-12", "2027-01")
+    invoiceDate: text("invoice_date").notNull(), // YYYY-MM-01
+    status: text("status").$type<BatchStatus>().notNull().default("draft"),
+    isDryRun: boolean("is_dry_run").notNull().default(false),
+    approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("recurring_batches_month_idx").on(t.monthKey)]
+);
+
+export const recurringBillingBatchItems = pgTable(
+  "recurring_billing_batch_items",
+  {
+    id: serial("id").primaryKey(),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => recurringBillingBatches.id, { onDelete: "cascade" }),
+    planId: integer("plan_id")
+      .notNull()
+      .references(() => recurringBillingPlans.id),
+    monthKey: text("month_key").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    description: text("description").notNull(),
+    netCents: integer("net_cents").notNull(),
+    taxCents: integer("tax_cents").notNull(),
+    totalCents: integer("total_cents").notNull(),
+    isHalfMonthProrated: boolean("is_half_month_prorated").notNull().default(false),
+    changeFlag: text("change_flag")
+      .$type<"new" | "half_month_start" | "price_changed" | "ending" | "unchanged">()
+      .notNull()
+      .default("unchanged"),
+    skipThisMonth: boolean("skip_this_month").notNull().default(false),
+    sageInvoiceId: text("sage_invoice_id"),
+    sageInvoiceNumber: text("sage_invoice_number"),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Hard database guarantee: a plan can NEVER be billed twice in the same month
+    uniqueIndex("batch_items_plan_month_unique_idx").on(t.planId, t.monthKey),
+    uniqueIndex("batch_items_idempotency_idx").on(t.idempotencyKey),
+  ]
+);
+
+export const sageInvoices = pgTable(
+  "sage_invoices",
+  {
+    id: serial("id").primaryKey(),
+    sageId: text("sage_id").notNull(),
+    invoiceNumber: text("invoice_number").notNull(),
+    contactName: text("contact_name").notNull().default(""),
+    contactSageId: text("contact_sage_id"),
+    reference: text("reference").default(""),
+    status: text("status").$type<SagePaymentStatus>().notNull().default("UNPAID"),
+    date: text("date").notNull(), // YYYY-MM-DD
+    dueDate: text("due_date"), // YYYY-MM-DD
+    netCents: integer("net_cents").notNull().default(0),
+    taxCents: integer("tax_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    outstandingCents: integer("outstanding_cents").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sage_invoices_sage_id_idx").on(t.sageId)]
+);
+
+export const sageConnection = pgTable("sage_connection", {
+  id: text("id").primaryKey(), // always 'primary'
+  environment: text("environment")
+    .$type<"sandbox" | "production">()
+    .notNull()
+    .default("sandbox"),
+  businessName: text("business_name").default("Sage Test Business"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  resourceOwnerId: text("resource_owner_id"),
+  nextNumberPreview: integer("next_number_preview").notNull().default(232016),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+  lastSyncStatus: text("last_sync_status")
+    .$type<"connected" | "disconnected" | "syncing" | "error">()
+    .notNull()
+    .default("connected"),
+  lastSyncError: text("last_sync_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  actorName: text("actor_name").notNull().default("System"),
+  entityType: text("entity_type").notNull(), // 'quote' | 'job' | 'rental' | 'billing' | 'sage'
+  entityId: text("entity_id").notNull(),
+  action: text("action").notNull(),
+  summary: text("summary").notNull(),
+  metadataJson: text("metadata_json"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
