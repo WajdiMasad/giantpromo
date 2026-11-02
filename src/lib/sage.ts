@@ -7,6 +7,10 @@ import {
   sageConnection,
   sageInvoices,
 } from "@/db/schema";
+import { toCents } from "@/lib/money";
+
+const SAGE_TOKEN_URL = "https://oauth.accounting.sage.com/token";
+const SAGE_API_BASE = "https://api.accounting.sage.com/v3.1";
 
 let sageMutex: Promise<unknown> = Promise.resolve();
 
@@ -42,6 +46,278 @@ export async function getSageConnectionState() {
     })
     .returning();
   return created!;
+}
+
+/**
+ * Refresh the live Sage OAuth token if it is expired or within 60s of expiring.
+ */
+export async function getValidLiveSageAccessToken(): Promise<{
+  accessToken: string;
+  businessId: string | null;
+} | null> {
+  const db = await getDb();
+  const conn = await getSageConnectionState();
+  if (!conn.accessToken || !conn.refreshToken) {
+    return null;
+  }
+
+  const nowMs = Date.now();
+  const expiresAtMs = conn.expiresAt ? new Date(conn.expiresAt).getTime() : 0;
+
+  if (expiresAtMs - nowMs > 60_000) {
+    return {
+      accessToken: conn.accessToken,
+      businessId: conn.resourceOwnerId ?? null,
+    };
+  }
+
+  const clientId = process.env.SAGE_CLIENT_ID ?? "";
+  const clientSecret = process.env.SAGE_CLIENT_SECRET ?? "";
+  if (!clientId || !clientSecret) return null;
+
+  const resp = await fetch(SAGE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: conn.refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!resp.ok) {
+    await db
+      .update(sageConnection)
+      .set({
+        lastSyncStatus: "disconnected",
+        lastSyncError: `Token refresh failed (HTTP ${resp.status})`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sageConnection.id, "primary"));
+    return null;
+  }
+
+  const tokenData = (await resp.json()) as {
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
+    resource_owner_id?: string;
+  };
+
+  await db
+    .update(sageConnection)
+    .set({
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
+      lastSyncStatus: "connected",
+      lastSyncError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(sageConnection.id, "primary"));
+
+  return {
+    accessToken: tokenData.access_token,
+    businessId: conn.resourceOwnerId ?? tokenData.resource_owner_id ?? null,
+  };
+}
+
+/**
+ * Read-only sync from Live Sage Business Cloud Accounting:
+ * 1. Fetches the Business ID & Business Name from /businesses
+ * 2. Fetches the 50 most recent invoices from /sales_invoices?sort=date:desc
+ * 3. Upserts them into sage_invoices and updates nextNumberPreview to (max_invoice_number + 1)
+ * Strictly READ-ONLY — never creates or modifies anything in live Sage.
+ */
+export async function syncLiveSageReadOnly(): Promise<{
+  businessName: string;
+  businessId: string | null;
+  syncedCount: number;
+  highestInvoiceNumber: number;
+  nextInvoiceNumber: number;
+}> {
+  return withSageLock(async () => {
+    const auth = await getValidLiveSageAccessToken();
+    if (!auth) {
+      throw new Error("Live Sage OAuth token is not connected yet.");
+    }
+
+    const db = await getDb();
+    let businessId = auth.businessId;
+    let businessName = "Giant Promotions Limited (Live Sage)";
+
+    // 1. Fetch business info from Sage v3.1
+    const bizResp = await fetch(`${SAGE_API_BASE}/businesses`, {
+      headers: {
+        Authorization: `Bearer ${auth.accessToken}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (bizResp.ok) {
+      const bizData = (await bizResp.json()) as {
+        $items?: Array<{ id?: string; name?: string; displayed_as?: string }>;
+      };
+      const firstBiz = bizData.$items?.[0];
+      if (firstBiz?.id) {
+        businessId = firstBiz.id;
+      }
+      if (firstBiz?.name || firstBiz?.displayed_as) {
+        businessName = `${firstBiz.name || firstBiz.displayed_as} (Live Sage)`;
+      }
+    }
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${auth.accessToken}`,
+      Accept: "application/json",
+    };
+    if (businessId) {
+      headers["X-Business-ID"] = businessId;
+    }
+
+    // 2. Fetch recent sales invoices (read-only)
+    const invUrl = new URL(`${SAGE_API_BASE}/sales_invoices`);
+    invUrl.searchParams.set("items_per_page", "50");
+    invUrl.searchParams.set("sort", "date:desc");
+    invUrl.searchParams.set("attributes", "all");
+
+    const invResp = await fetch(invUrl, {
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    let highestInvoiceNumber = 232015;
+    let syncedCount = 0;
+
+    if (invResp.ok) {
+      const invData = (await invResp.json()) as {
+        $items?: Array<{
+          id?: string;
+          invoice_number?: string;
+          contact_name?: string;
+          contact?: { id?: string; name?: string; displayed_as?: string };
+          reference?: string;
+          status?: { id?: string } | string;
+          date?: string;
+          due_date?: string;
+          net_amount?: number | string;
+          tax_amount?: number | string;
+          total_amount?: number | string;
+          outstanding_amount?: number | string;
+        }>;
+      };
+
+      const items = invData.$items ?? [];
+      for (const inv of items) {
+        if (!inv.id || !inv.invoice_number) continue;
+        const numMatch = String(inv.invoice_number).match(/(\d+)$/);
+        if (numMatch) {
+          const parsed = Number.parseInt(numMatch[1]!, 10);
+          if (Number.isFinite(parsed) && parsed > highestInvoiceNumber) {
+            highestInvoiceNumber = parsed;
+          }
+        }
+
+        const statusId =
+          typeof inv.status === "object" && inv.status !== null
+            ? inv.status.id || "UNPAID"
+            : String(inv.status || "UNPAID");
+
+        const contactName =
+          inv.contact?.name ||
+          inv.contact?.displayed_as ||
+          inv.contact_name ||
+          "Customer";
+
+        const netCents = toCents(inv.net_amount ?? 0);
+        const taxCents = toCents(inv.tax_amount ?? 0);
+        const totalCents = toCents(inv.total_amount ?? 0);
+        const outstandingCents =
+          inv.outstanding_amount !== undefined
+            ? toCents(inv.outstanding_amount)
+            : statusId === "PAID" || statusId === "VOID"
+            ? 0
+            : totalCents;
+
+        const [existing] = await db
+          .select()
+          .from(sageInvoices)
+          .where(eq(sageInvoices.sageId, inv.id))
+          .limit(1);
+
+        if (existing) {
+          await db
+            .update(sageInvoices)
+            .set({
+              invoiceNumber: String(inv.invoice_number),
+              contactName,
+              contactSageId: inv.contact?.id ?? null,
+              reference: inv.reference ?? null,
+              status: statusId,
+              date: inv.date ?? existing.date,
+              dueDate: inv.due_date ?? existing.dueDate,
+              netCents,
+              taxCents,
+              totalCents,
+              outstandingCents,
+              updatedAt: new Date(),
+            })
+            .where(eq(sageInvoices.id, existing.id));
+        } else {
+          await db.insert(sageInvoices).values({
+            sageId: inv.id,
+            invoiceNumber: String(inv.invoice_number),
+            contactName,
+            contactSageId: inv.contact?.id ?? null,
+            reference: inv.reference ?? null,
+            status: statusId,
+            date: inv.date ?? new Date().toISOString().slice(0, 10),
+            dueDate: inv.due_date ?? null,
+            netCents,
+            taxCents,
+            totalCents,
+            outstandingCents,
+          });
+        }
+        syncedCount += 1;
+      }
+    }
+
+    const nextInvoiceNumber = highestInvoiceNumber + 1;
+
+    await db
+      .update(sageConnection)
+      .set({
+        environment: "live",
+        businessName,
+        resourceOwnerId: businessId,
+        nextNumberPreview: nextInvoiceNumber,
+        lastSyncAt: new Date(),
+        lastSyncStatus: "connected",
+        lastSyncError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(sageConnection.id, "primary"));
+
+    await db.insert(activityLog).values({
+      actorName: "Sage Accounting Live Sync",
+      entityType: "sage",
+      entityId: "primary",
+      action: "sage.live_synced",
+      summary: `Connected to ${businessName}: synced ${syncedCount} recent invoices (latest #${highestInvoiceNumber}, next master number #${nextInvoiceNumber})`,
+    });
+
+    return {
+      businessName,
+      businessId,
+      syncedCount,
+      highestInvoiceNumber,
+      nextInvoiceNumber,
+    };
+  });
 }
 
 /**

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { sageConnection } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { syncLiveSageReadOnly } from "@/lib/sage";
 
 export async function GET(request: Request) {
   await requireUser(["admin"]);
@@ -22,7 +23,8 @@ export async function GET(request: Request) {
 
   const clientId = process.env.SAGE_CLIENT_ID ?? "";
   const clientSecret = process.env.SAGE_CLIENT_SECRET ?? "";
-  const redirectUri = `${url.origin}/api/sage/callback`;
+  const redirectUri =
+    process.env.SAGE_REDIRECT_URI?.trim() || `${url.origin}/api/sage/callback`;
 
   const resp = await fetch("https://oauth.accounting.sage.com/token", {
     method: "POST",
@@ -46,12 +48,14 @@ export async function GET(request: Request) {
     refresh_token: string;
     expires_in: number;
     resource_owner_id?: string;
+    requested_by_id?: string;
   };
 
   const db = await getDb();
   await db
     .update(sageConnection)
     .set({
+      environment: "live",
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       expiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
@@ -62,6 +66,13 @@ export async function GET(request: Request) {
       updatedAt: new Date(),
     })
     .where(eq(sageConnection.id, "primary"));
+
+  // Immediately run a read-only sync of business info & latest invoice number (232015+)
+  try {
+    await syncLiveSageReadOnly();
+  } catch (err) {
+    console.error("Initial read-only Sage sync warning:", err);
+  }
 
   return NextResponse.redirect(new URL("/?sage=connected", url.origin));
 }

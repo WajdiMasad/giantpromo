@@ -120,6 +120,18 @@ export default async function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <a
+            href="/api/sage/connect"
+            className={`inline-flex items-center gap-2 rounded-xl font-semibold text-sm px-4 py-2.5 transition shadow-xs ${
+              sageState.environment === "live" && sageState.accessToken
+                ? "border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900"
+                : "border border-amber-400 bg-amber-400 hover:bg-amber-300 text-slate-950"
+            }`}
+          >
+            {sageState.environment === "live" && sageState.accessToken
+              ? `Sage Live Connected • Next #${sageState.nextNumberPreview}`
+              : "Connect Live Sage OAuth"}
+          </a>
           <Link
             href="/installer"
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm px-4 py-2.5 transition shadow-xs"

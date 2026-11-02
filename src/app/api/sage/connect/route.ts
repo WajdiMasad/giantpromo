@@ -23,14 +23,14 @@ export async function GET(request: Request) {
     maxAge: 600,
   });
 
-  const redirectUri = `${origin}/api/sage/callback`;
+  const redirectUri =
+    process.env.SAGE_REDIRECT_URI?.trim() || `${origin}/api/sage/callback`;
+
   const authUrl = new URL("https://www.sageone.com/oauth2/auth/central");
-  authUrl.searchParams.set("filter", "apiv3.1");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("scope", "full_access");
-  authUrl.searchParams.set("country", "ca");
   authUrl.searchParams.set("state", state);
 
   return NextResponse.redirect(authUrl);
