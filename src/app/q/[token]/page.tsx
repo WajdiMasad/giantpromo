@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { customers, jobItems, projects } from "@/db/schema";
+import { customers, invoices, jobItems, payments, projects } from "@/db/schema";
 import { formatCAD } from "@/lib/money";
 import { recordQuoteViewWorkflow } from "@/lib/workflows";
 import { CustomerQuoteApprovalCard } from "@/components/CustomerQuoteApprovalCard";
@@ -46,32 +46,44 @@ export default async function PublicQuotePortalPage(props: {
 
   const signed = Boolean(project.approvedAt);
 
+  const invoice = project.invoiceId
+    ? ((await db.select().from(invoices).where(eq(invoices.id, project.invoiceId)).limit(1))[0] ?? null)
+    : null;
+  const invoicePayments = invoice
+    ? await db.select().from(payments).where(eq(payments.invoiceId, invoice.id))
+    : [];
+  const paidCents = invoicePayments.reduce((a, pay) => a + pay.amountCents, 0);
+  const balanceCents = invoice ? Math.max(0, invoice.totalCents - paidCents) : project.totalCents;
+  const isPaid = invoice ? paidCents >= invoice.totalCents && invoice.totalCents > 0 : false;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-900 py-8 px-4 sm:px-6">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-950 print:bg-white text-slate-900 py-8 print:py-0 px-4 sm:px-6 print:px-0">
+      <div className="max-w-3xl mx-auto space-y-6 print:space-y-4 print:max-w-none">
         {/* Branded Header */}
-        <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-8 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="rounded-3xl bg-slate-900 print:bg-white border border-slate-800 print:border-b print:border-slate-300 p-6 sm:p-8 text-white print:text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="h-12 w-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xl">
+            <div className="h-12 w-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xl print:border print:border-slate-900">
               GP
             </div>
             <div>
-              <div className="font-bold text-lg tracking-tight">GIANT PROMOTIONS LIMITED</div>
-              <div className="text-xs text-slate-400">
-                3797 Mackintosh Street, Halifax, NS B3K 5A7 • 902-456-6487
+              <div className="font-bold text-lg tracking-tight print:text-xl">GIANT PROMOTIONS LIMITED</div>
+              <div className="text-xs text-slate-400 print:text-slate-600">
+                3797 Mackintosh Street, Halifax, NS B3K 5A7 • 902-456-6487 • HST #888811650 RT 0001
               </div>
             </div>
           </div>
           <div className="sm:text-right">
-            <div className="font-mono text-sm font-bold text-amber-400">{project.quoteNumber}</div>
-            <div className="text-xs text-slate-400">
-              {signed ? "Approved" : `Valid until ${project.validUntil || "30 days"}`}
+            <div className="font-mono text-sm font-bold text-amber-400 print:text-slate-950">
+              {project.jobNumber ? `JOB #${project.jobNumber} • ${project.quoteNumber}` : project.quoteNumber}
+            </div>
+            <div className="text-xs text-slate-400 print:text-slate-600">
+              {signed ? "Signed & Authorized" : `Valid until ${project.validUntil || "30 days"}`}
             </div>
           </div>
         </div>
 
         {/* Main Quote Card */}
-        <div className="rounded-3xl bg-white p-6 sm:p-8 shadow-xl space-y-6">
+        <div className="rounded-3xl bg-white p-6 sm:p-8 shadow-xl print:shadow-none print:p-0 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-6">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Prepared for</div>
@@ -150,8 +162,10 @@ export default async function PublicQuotePortalPage(props: {
             </div>
           </div>
 
-          {/* Interactive Approval Component */}
+          {/* Interactive Approval & Stripe Payment Component */}
           <CustomerQuoteApprovalCard
+            projectId={project.id}
+            invoiceId={invoice?.id ?? null}
             publicToken={project.publicToken}
             status={signed ? "approved" : project.status}
             approvedByName={project.approvedByName}
@@ -161,7 +175,10 @@ export default async function PublicQuotePortalPage(props: {
             customerEmail={customer.email || ""}
             quoteNumber={project.quoteNumber}
             jobNumber={project.jobNumber}
-            jobId={null}
+            totalCents={project.totalCents}
+            paidCents={paidCents}
+            balanceCents={balanceCents}
+            isPaid={isPaid}
           />
         </div>
       </div>

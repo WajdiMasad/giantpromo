@@ -27,6 +27,7 @@ import {
   type AvailabilityResult,
   type FleetUnitWithAvailability,
 } from "@/lib/availability";
+import { createStripeSession, finalizeStripePayment } from "@/lib/stripe";
 import {
   captureBatch,
   recordInvoicePayment,
@@ -323,6 +324,48 @@ export async function recordPaymentAction(input: {
 
     revalidatePath("/");
     revalidatePath("/projects");
+    revalidatePath("/accounting");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+export async function createStripeCheckoutAction(input: {
+  projectId: number;
+  customerEmail?: string;
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  try {
+    const session = await createStripeSession(input);
+    return {
+      ok: true as const,
+      url: session.url,
+      sessionId: session.sessionId,
+      isTestMode: session.isTestMode,
+    };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+export async function finalizeStripePaymentAction(input: {
+  invoiceId: number;
+  amountCents: number;
+  sessionId: string;
+}) {
+  try {
+    const user = await getCurrentUser();
+    await finalizeStripePayment({
+      invoiceId: input.invoiceId,
+      amountCents: input.amountCents,
+      sessionId: input.sessionId,
+      actorName: user?.name ?? "Customer (Stripe Card)",
+    });
+    revalidatePath("/");
+    revalidatePath("/projects");
+    revalidatePath("/billing");
     revalidatePath("/accounting");
     return { ok: true as const };
   } catch (err) {

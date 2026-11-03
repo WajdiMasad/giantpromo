@@ -239,7 +239,12 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-bold text-base text-slate-900">{c.name}</h3>
+                  <Link
+                    href={`/customers/${c.id}`}
+                    className="font-bold text-base text-slate-900 hover:text-amber-600 hover:underline transition"
+                  >
+                    {c.name}
+                  </Link>
                   <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">
                     {c.city}
                   </span>
