@@ -50,60 +50,12 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS customers_sage_id_idx ON customers (sage_id);
 
-CREATE TABLE IF NOT EXISTS quotes (
+CREATE TABLE IF NOT EXISTS projects (
   id SERIAL PRIMARY KEY,
   quote_number TEXT NOT NULL,
   public_token TEXT NOT NULL,
-  customer_id INTEGER NOT NULL REFERENCES customers(id),
-  title TEXT NOT NULL,
-  po_reference TEXT DEFAULT '',
-  site_address TEXT DEFAULT '',
-  site_province TEXT NOT NULL DEFAULT 'NS',
-  lat DOUBLE PRECISION,
-  lng DOUBLE PRECISION,
-  status TEXT NOT NULL DEFAULT 'draft',
-  subtotal_cents INTEGER NOT NULL DEFAULT 0,
-  tax_rate_ppm INTEGER NOT NULL DEFAULT 140000,
-  tax_label TEXT NOT NULL DEFAULT '14% HST',
-  tax_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents INTEGER NOT NULL DEFAULT 0,
-  notes TEXT DEFAULT '',
-  customer_terms TEXT DEFAULT '',
-  valid_until TEXT,
-  sent_at TIMESTAMPTZ,
-  sent_by_user_id INTEGER REFERENCES users(id),
-  first_viewed_at TIMESTAMPTZ,
-  approved_at TIMESTAMPTZ,
-  approved_by_name TEXT,
-  approved_by_email TEXT,
-  approved_ip TEXT,
-  decline_reason TEXT,
-  created_by_user_id INTEGER REFERENCES users(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS quotes_number_idx ON quotes (quote_number);
-CREATE UNIQUE INDEX IF NOT EXISTS quotes_public_token_idx ON quotes (public_token);
-
-CREATE TABLE IF NOT EXISTS quote_items (
-  id SERIAL PRIMARY KEY,
-  quote_id INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  description TEXT NOT NULL,
-  quantity TEXT NOT NULL DEFAULT '1',
-  unit_price_cents INTEGER NOT NULL DEFAULT 0,
-  net_cents INTEGER NOT NULL DEFAULT 0,
-  tax_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents INTEGER NOT NULL DEFAULT 0,
-  tax_exempt BOOLEAN NOT NULL DEFAULT FALSE,
-  calculator_meta_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS jobs (
-  id SERIAL PRIMARY KEY,
   job_number TEXT,
   idempotency_key TEXT NOT NULL,
-  quote_id INTEGER REFERENCES quotes(id),
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   title TEXT NOT NULL,
   description TEXT DEFAULT '',
@@ -112,7 +64,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   site_province TEXT NOT NULL DEFAULT 'NS',
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
-  status TEXT NOT NULL DEFAULT 'approved',
+  status TEXT NOT NULL DEFAULT 'new',
   priority TEXT NOT NULL DEFAULT 'normal',
   scheduled_date TEXT,
   completed_at TIMESTAMPTZ,
@@ -121,15 +73,27 @@ CREATE TABLE IF NOT EXISTS jobs (
   tax_label TEXT NOT NULL DEFAULT '14% HST',
   tax_cents INTEGER NOT NULL DEFAULT 0,
   total_cents INTEGER NOT NULL DEFAULT 0,
+  customer_terms TEXT DEFAULT '',
+  valid_until TEXT,
+  sent_at TIMESTAMPTZ,
+  sent_by_user_id INTEGER REFERENCES users(id),
+  first_viewed_at TIMESTAMPTZ,
+  last_viewed_at TIMESTAMPTZ,
+  approved_at TIMESTAMPTZ,
+  approved_by_name TEXT,
+  approved_by_email TEXT,
+  approved_ip TEXT,
+  decline_reason TEXT,
+  created_by_user_id INTEGER REFERENCES users(id),
   installer_notes TEXT DEFAULT '',
   internal_notes TEXT DEFAULT '',
   drive_folder_id TEXT,
   drive_folder_url TEXT,
   sage_invoice_id TEXT,
   sage_invoice_number TEXT,
-  sage_sync_status TEXT NOT NULL DEFAULT 'pending_number',
+  sage_sync_status TEXT NOT NULL DEFAULT 'not_started',
   sage_sync_error TEXT,
-  sage_payment_status TEXT NOT NULL DEFAULT 'UNPAID',
+  sage_payment_status TEXT NOT NULL DEFAULT 'DRAFT',
   invoice_sent_at TIMESTAMPTZ,
   invoice_sent_by_user_id INTEGER REFERENCES users(id),
   invoice_sent_to_email TEXT,
@@ -137,33 +101,38 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_job_number_idx ON jobs (job_number);
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency_key_idx ON jobs (idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS projects_quote_number_idx ON projects (quote_number);
+CREATE UNIQUE INDEX IF NOT EXISTS projects_public_token_idx ON projects (public_token);
+CREATE UNIQUE INDEX IF NOT EXISTS projects_job_number_idx ON projects (job_number);
+CREATE UNIQUE INDEX IF NOT EXISTS projects_idempotency_key_idx ON projects (idempotency_key);
 
-CREATE TABLE IF NOT EXISTS job_items (
+CREATE TABLE IF NOT EXISTS project_items (
   id SERIAL PRIMARY KEY,
-  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  group_name TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL,
   quantity TEXT NOT NULL DEFAULT '1',
   unit_price_cents INTEGER NOT NULL DEFAULT 0,
   net_cents INTEGER NOT NULL DEFAULT 0,
   tax_cents INTEGER NOT NULL DEFAULT 0,
   total_cents INTEGER NOT NULL DEFAULT 0,
-  tax_exempt BOOLEAN NOT NULL DEFAULT FALSE
+  tax_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+  hidden_from_customer BOOLEAN NOT NULL DEFAULT FALSE,
+  calculator_meta_json TEXT
 );
 
-CREATE TABLE IF NOT EXISTS job_assignments (
+CREATE TABLE IF NOT EXISTS project_assignments (
   id SERIAL PRIMARY KEY,
-  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS job_assignments_unique_idx ON job_assignments (job_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS project_assignments_unique_idx ON project_assignments (project_id, user_id);
 
-CREATE TABLE IF NOT EXISTS job_files (
+CREATE TABLE IF NOT EXISTS project_files (
   id SERIAL PRIMARY KEY,
-  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   uploaded_by_user_id INTEGER REFERENCES users(id),
   uploaded_by_name TEXT NOT NULL DEFAULT 'Staff',
   kind TEXT NOT NULL DEFAULT 'install_photo',

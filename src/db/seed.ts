@@ -163,147 +163,18 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
 
   const [oregans, steele, chamber, rbc, superstore, moncton] = insertedCustomers;
 
-  // 4. Seed Quotes (Draft, Sent, Viewed, Approved)
+  // 4. Seed Projects (one record from quote to paid) — Sage-numbered jobs + open quotes
   const today = new Date().toISOString().slice(0, 10);
   const tomorrow = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
 
-  const insertedQuotes = await db
-    .insert(schema.quotes)
+  const insertedProjects = await db
+    .insert(schema.projects)
     .values([
       {
-        quoteNumber: "Q-1001",
-        publicToken: "qtok-oregans-wrap-1001",
-        customerId: oregans!.id,
-        title: "Showroom Window Perf & Promotional Vinyl Graphics",
-        poReference: "PO-69158",
-        siteAddress: "3240 Kempt Road, Halifax, NS B3K 4X1",
-        siteProvince: "NS",
-        lat: 44.6612,
-        lng: -63.6085,
-        status: "approved",
-        subtotalCents: 1850_00,
-        taxRatePpm: 140000,
-        taxLabel: "14% HST",
-        taxCents: 259_00,
-        totalCents: 2109_00,
-        notes: "ContraVision 70/30 window perf across 4 south-facing showroom panes + laminated 3M IJ35C decals.",
-        customerTerms: "50% deposit upon approval for custom print runs over $2,500. Net 30 for approved commercial accounts.",
-        validUntil: "2026-11-30",
-        sentAt: new Date(Date.now() - 3 * 86400_000),
-        firstViewedAt: new Date(Date.now() - 2 * 86400_000),
-        approvedAt: new Date(Date.now() - 2 * 86400_000),
-        approvedByName: "Mark O'Regan",
-        approvedByEmail: "marketing@oregans.com",
-        createdByUserId: adminUser.id,
-      },
-      {
-        quoteNumber: "Q-1002",
-        publicToken: "qtok-rbc-branch-1002",
-        customerId: rbc!.id,
-        title: "Branch Frosted Privacy Film & Exterior Acrylic Signage",
-        poReference: "RBC-DC-2026",
-        siteAddress: "145 Hector Gate, Dartmouth, NS B3B 0E5",
-        siteProvince: "NS",
-        lat: 44.7145,
-        lng: -63.5562,
-        status: "viewed",
-        subtotalCents: 1240_00,
-        taxRatePpm: 140000,
-        taxLabel: "14% HST",
-        taxCents: 173_60,
-        totalCents: 1413_60,
-        notes: "Diamond Etch 2mil frosted film on 6 office glass partitions + installation.",
-        customerTerms: "Net 30 upon installation completion.",
-        validUntil: "2026-11-25",
-        sentAt: new Date(Date.now() - 86400_000),
-        firstViewedAt: new Date(Date.now() - 3600_000),
-        createdByUserId: adminUser.id,
-      },
-      {
-        quoteNumber: "Q-1003",
-        publicToken: "qtok-moncton-banners-1003",
-        customerId: moncton!.id,
-        title: "Winter Clearance 13oz Heavy-Duty Lot Banners (x8)",
-        poReference: "MH-8841",
-        siteAddress: "1850 Mountain Road, Moncton, NB E1G 1A9",
-        siteProvince: "NB",
-        lat: 46.1185,
-        lng: -64.8632,
-        status: "sent",
-        subtotalCents: 960_00,
-        taxRatePpm: 150000,
-        taxLabel: "15% HST",
-        taxCents: 144_00,
-        totalCents: 1104_00,
-        notes: "8x 4ft x 10ft 13oz Duratex banners with reinforced hems and brass grommets.",
-        customerTerms: "Net 30.",
-        validUntil: "2026-11-28",
-        sentAt: new Date(Date.now() - 7200_000),
-        createdByUserId: adminUser.id,
-      },
-    ])
-    .returning();
-
-  const [q1, q2, q3] = insertedQuotes;
-
-  await db.insert(schema.quoteItems).values([
-    {
-      quoteId: q1!.id,
-      sortOrder: 0,
-      description: "ContraVision 70/30 Perforated Window Film (4 panes, 48\" x 72\")",
-      quantity: "4",
-      unitPriceCents: 350_00,
-      netCents: 1400_00,
-      taxCents: 196_00,
-      totalCents: 1596_00,
-    },
-    {
-      quoteId: q1!.id,
-      sortOrder: 1,
-      description: "On-site Surface Prep, Removal of Old Vinyl & Professional Installation",
-      quantity: "1",
-      unitPriceCents: 450_00,
-      netCents: 450_00,
-      taxCents: 63_00,
-      totalCents: 513_00,
-    },
-    {
-      quoteId: q2!.id,
-      sortOrder: 0,
-      description: "Diamond Etch 125 2mil Frosted Privacy Film (6 glass partitions)",
-      quantity: "6",
-      unitPriceCents: 165_00,
-      netCents: 990_00,
-      taxCents: 138_60,
-      totalCents: 1128_60,
-    },
-    {
-      quoteId: q2!.id,
-      sortOrder: 1,
-      description: "Early-morning Branch Installation Labor (2 installers)",
-      quantity: "1",
-      unitPriceCents: 250_00,
-      netCents: 250_00,
-      taxCents: 35_00,
-      totalCents: 285_00,
-    },
-    {
-      quoteId: q3!.id,
-      sortOrder: 0,
-      description: "4ft x 10ft 13oz Duratex Banner — Hemmed & Grommeted",
-      quantity: "8",
-      unitPriceCents: 120_00,
-      netCents: 960_00,
-      taxCents: 144_00,
-      totalCents: 1104_00,
-    },
-  ]);
-
-  // 5. Seed Jobs with Sage Master Numbers (232013, 232014, 232015)
-  const insertedJobs = await db
-    .insert(schema.jobs)
-    .values([
-      {
+        // Installed, waiting for office to send the invoice
+        quoteNumber: "Q-0997",
+        publicToken: "qtok-steele-vans-0997",
         jobNumber: "232013",
         idempotencyKey: "gp-seed-job-232013",
         customerId: steele!.id,
@@ -323,6 +194,13 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         taxLabel: "14% HST",
         taxCents: 336_00,
         totalCents: 2736_00,
+        customerTerms: "Net 30.",
+        sentAt: new Date(Date.now() - 9 * 86400_000),
+        firstViewedAt: new Date(Date.now() - 8 * 86400_000),
+        approvedAt: new Date(Date.now() - 8 * 86400_000),
+        approvedByName: "Chris Beaton",
+        approvedByEmail: "cbeaton@steeleauto.com",
+        createdByUserId: adminUser.id,
         installerNotes: "Both vans parked in bay 4. Heated bay available.",
         driveFolderId: "drive-folder-232013",
         driveFolderUrl: "https://drive.google.com/drive/folders/232013",
@@ -332,6 +210,9 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         sagePaymentStatus: "UNPAID",
       },
       {
+        // In progress, rush
+        quoteNumber: "Q-0998",
+        publicToken: "qtok-chamber-gala-0998",
         jobNumber: "232014",
         idempotencyKey: "gp-seed-job-232014",
         customerId: chamber!.id,
@@ -350,6 +231,13 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         taxLabel: "14% HST",
         taxCents: 231_00,
         totalCents: 1881_00,
+        customerTerms: "Net 30.",
+        sentAt: new Date(Date.now() - 6 * 86400_000),
+        firstViewedAt: new Date(Date.now() - 5 * 86400_000),
+        approvedAt: new Date(Date.now() - 5 * 86400_000),
+        approvedByName: "Sarah Johnson",
+        approvedByEmail: "events@halifaxchamber.com",
+        createdByUserId: adminUser.id,
         installerNotes: "Deliver & set up in main conference room before 3:00 PM.",
         driveFolderId: "drive-folder-232014",
         driveFolderUrl: "https://drive.google.com/drive/folders/232014",
@@ -359,12 +247,15 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         sagePaymentStatus: "UNPAID",
       },
       {
+        // Signed online, scheduled for tomorrow
+        quoteNumber: "Q-1001",
+        publicToken: "qtok-oregans-wrap-1001",
         jobNumber: "232015",
         idempotencyKey: "gp-seed-job-232015",
-        quoteId: q1!.id,
         customerId: oregans!.id,
         title: "Showroom Window Perf & Promotional Vinyl Graphics",
-        description: "ContraVision 70/30 window perf across 4 south-facing showroom panes + laminated 3M IJ35C decals.",
+        description:
+          "ContraVision 70/30 window perf across 4 south-facing showroom panes + laminated 3M IJ35C decals.",
         poReference: "PO-69158",
         siteAddress: "3240 Kempt Road, Halifax, NS B3K 4X1",
         siteProvince: "NS",
@@ -378,7 +269,17 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         taxLabel: "14% HST",
         taxCents: 259_00,
         totalCents: 2109_00,
-        installerNotes: "Bring 12ft step ladders and isopropyl prep kit. Ask for Mark at showroom desk.",
+        customerTerms:
+          "50% deposit upon approval for custom print runs over $2,500. Net 30 for approved commercial accounts.",
+        validUntil: "2026-11-30",
+        sentAt: new Date(Date.now() - 3 * 86400_000),
+        firstViewedAt: new Date(Date.now() - 2 * 86400_000),
+        approvedAt: new Date(Date.now() - 2 * 86400_000),
+        approvedByName: "Mark O'Regan",
+        approvedByEmail: "marketing@oregans.com",
+        createdByUserId: adminUser.id,
+        installerNotes:
+          "Bring 12ft step ladders and isopropyl prep kit. Ask for Mark at showroom desk.",
         driveFolderId: "drive-folder-232015",
         driveFolderUrl: "https://drive.google.com/drive/folders/232015",
         sageInvoiceId: "sage-inv-232015",
@@ -386,14 +287,72 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         sageSyncStatus: "synced",
         sagePaymentStatus: "UNPAID",
       },
-    ])
+      {
+        // Customer opened it but hasn't answered
+        quoteNumber: "Q-1002",
+        publicToken: "qtok-rbc-branch-1002",
+        idempotencyKey: "gp-seed-quote-1002",
+        customerId: rbc!.id,
+        title: "Branch Frosted Privacy Film & Exterior Acrylic Signage",
+        description: "Diamond Etch 2mil frosted film on 6 office glass partitions + installation.",
+        poReference: "RBC-DC-2026",
+        siteAddress: "145 Hector Gate, Dartmouth, NS B3B 0E5",
+        siteProvince: "NS",
+        lat: 44.7145,
+        lng: -63.5562,
+        status: "quote_sent",
+        subtotalCents: 1240_00,
+        taxRatePpm: 140000,
+        taxLabel: "14% HST",
+        taxCents: 173_60,
+        totalCents: 1413_60,
+        customerTerms: "Net 30 upon installation completion.",
+        validUntil: "2026-11-25",
+        sentAt: new Date(Date.now() - 86400_000),
+        firstViewedAt: new Date(Date.now() - 3600_000),
+        lastViewedAt: new Date(Date.now() - 3600_000),
+        createdByUserId: adminUser.id,
+      },
+      {
+        // Sent, not yet opened
+        quoteNumber: "Q-1003",
+        publicToken: "qtok-moncton-banners-1003",
+        idempotencyKey: "gp-seed-quote-1003",
+        customerId: moncton!.id,
+        title: "Winter Clearance 13oz Heavy-Duty Lot Banners (x8)",
+        description:
+          "8x 4ft x 10ft 13oz Duratex banners with reinforced hems and brass grommets.",
+        poReference: "MH-8841",
+        siteAddress: "1850 Mountain Road, Moncton, NB E1G 1A9",
+        siteProvince: "NB",
+        lat: 46.1185,
+        lng: -64.8632,
+        status: "quote_sent",
+        subtotalCents: 960_00,
+        taxRatePpm: 150000,
+        taxLabel: "15% HST",
+        taxCents: 144_00,
+        totalCents: 1104_00,
+        customerTerms: "Net 30.",
+        validUntil: "2026-11-28",
+        sentAt: new Date(Date.now() - 7200_000),
+        createdByUserId: adminUser.id,
+      },
+    ] as (typeof schema.projects.$inferInsert)[])
     .returning();
 
-  const [job1, job2, job3] = insertedJobs;
+  const byQuote = (n: string) => insertedProjects.find((p) => p.quoteNumber === n)!;
+  const job1 = byQuote("Q-0997"); // 232013
+  const job2 = byQuote("Q-0998"); // 232014
+  const job3 = byQuote("Q-1001"); // 232015
+  const q1 = job3;
+  const pRbc = byQuote("Q-1002");
+  const pMoncton = byQuote("Q-1003");
+  void yesterday;
 
-  await db.insert(schema.jobItems).values([
+  await db.insert(schema.projectItems).values([
     {
-      jobId: job1!.id,
+      jobId: job1.id,
       sortOrder: 0,
       description: "3M ControlTac IJ180MC-10 Partial Van Wrap & Lettering (x2 Vans)",
       quantity: "2",
@@ -403,7 +362,7 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       totalCents: 2736_00,
     },
     {
-      jobId: job2!.id,
+      jobId: job2.id,
       sortOrder: 0,
       description: "8x10ft Tension Fabric Stage Backdrop with Stand",
       quantity: "1",
@@ -413,9 +372,9 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       totalCents: 1060_20,
     },
     {
-      jobId: job2!.id,
+      jobId: job2.id,
       sortOrder: 1,
-      description: "33\" x 81\" Retractable Banner Stand with Carry Case",
+      description: '33" x 81" Retractable Banner Stand with Carry Case',
       quantity: "4",
       unitPriceCents: 180_00,
       netCents: 720_00,
@@ -423,9 +382,9 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       totalCents: 820_80,
     },
     {
-      jobId: job3!.id,
+      jobId: job3.id,
       sortOrder: 0,
-      description: "ContraVision 70/30 Perforated Window Film (4 panes, 48\" x 72\")",
+      description: 'ContraVision 70/30 Perforated Window Film (4 panes, 48" x 72")',
       quantity: "4",
       unitPriceCents: 350_00,
       netCents: 1400_00,
@@ -433,7 +392,7 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       totalCents: 1596_00,
     },
     {
-      jobId: job3!.id,
+      jobId: job3.id,
       sortOrder: 1,
       description: "On-site Surface Prep, Removal of Old Vinyl & Professional Installation",
       quantity: "1",
@@ -442,14 +401,44 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       taxCents: 63_00,
       totalCents: 513_00,
     },
+    {
+      jobId: pRbc.id,
+      sortOrder: 0,
+      description: "Diamond Etch 125 2mil Frosted Privacy Film (6 glass partitions)",
+      quantity: "6",
+      unitPriceCents: 165_00,
+      netCents: 990_00,
+      taxCents: 138_60,
+      totalCents: 1128_60,
+    },
+    {
+      jobId: pRbc.id,
+      sortOrder: 1,
+      description: "Early-morning Branch Installation Labor (2 installers)",
+      quantity: "1",
+      unitPriceCents: 250_00,
+      netCents: 250_00,
+      taxCents: 35_00,
+      totalCents: 285_00,
+    },
+    {
+      jobId: pMoncton.id,
+      sortOrder: 0,
+      description: "4ft x 10ft 13oz Duratex Banner — Hemmed & Grommeted",
+      quantity: "8",
+      unitPriceCents: 120_00,
+      netCents: 960_00,
+      taxCents: 144_00,
+      totalCents: 1104_00,
+    },
   ]);
 
-  await db.insert(schema.jobAssignments).values([
-    { jobId: job1!.id, userId: leadInstaller.id },
-    { jobId: job2!.id, userId: leadInstaller.id },
-    { jobId: job2!.id, userId: fieldInstaller.id },
-    { jobId: job3!.id, userId: leadInstaller.id },
-    { jobId: job3!.id, userId: fieldInstaller.id },
+  await db.insert(schema.projectAssignments).values([
+    { jobId: job1.id, userId: leadInstaller.id },
+    { jobId: job2.id, userId: leadInstaller.id },
+    { jobId: job2.id, userId: fieldInstaller.id },
+    { jobId: job3.id, userId: leadInstaller.id },
+    { jobId: job3.id, userId: fieldInstaller.id },
   ]);
 
   // 6. Seed Sage Invoices Cache (mirrors jobs + historical paid/overdue invoices for Dashboard)
@@ -717,16 +706,16 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
     {
       actorUserId: adminUser.id,
       actorName: "Mark O'Regan (Customer Portal)",
-      entityType: "quote",
-      entityId: String(q1!.id),
+      entityType: "project",
+      entityId: String(q1.id),
       action: "quote.approved",
       summary: "Quote Q-1001 approved online -> Sage Invoice #232015 & Job #232015 created",
     },
     {
       actorUserId: leadInstaller.id,
       actorName: leadInstaller.name,
-      entityType: "job",
-      entityId: String(job1!.id),
+      entityType: "project",
+      entityId: String(job1.id),
       action: "job.installed",
       summary: "Job #232013 marked Installed (Steele Auto Group Fleet Van Wrap)",
     },

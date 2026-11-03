@@ -2,7 +2,8 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { AlertCircle, ExternalLink, HardHat, Plus, Send } from "lucide-react";
 import { getDb } from "@/db";
-import { customers, jobs, quotes } from "@/db/schema";
+import { customers, projects } from "@/db/schema";
+import { isSigned, isUnsignedQuote } from "@/lib/project-status";
 import { formatCAD } from "@/lib/money";
 import { getSageConnectionState } from "@/lib/sage";
 import { DashboardInvoiceActions } from "@/components/DashboardInvoiceActions";
@@ -44,17 +45,19 @@ export default async function DashboardPage() {
   const db = await getDb();
   const sageState = await getSageConnectionState();
 
-  const allJobs = await db
-    .select({ job: jobs, customer: customers })
-    .from(jobs)
-    .innerJoin(customers, eq(jobs.customerId, customers.id))
-    .orderBy(desc(jobs.id));
+  const everything = await db
+    .select({ project: projects, customer: customers })
+    .from(projects)
+    .innerJoin(customers, eq(projects.customerId, customers.id))
+    .orderBy(desc(projects.id));
 
-  const allQuotes = await db
-    .select({ quote: quotes, customer: customers })
-    .from(quotes)
-    .innerJoin(customers, eq(quotes.customerId, customers.id))
-    .orderBy(desc(quotes.createdAt));
+  // Signed projects are jobs; unsigned ones are quotes (same record, different phase)
+  const allJobs = everything
+    .filter(({ project }) => isSigned(project.status))
+    .map(({ project, customer }) => ({ job: project, customer }));
+  const allQuotes = everything
+    .filter(({ project }) => isUnsignedQuote(project.status))
+    .map(({ project, customer }) => ({ quote: project, customer }));
 
   const nowMs = Date.now();
   const today = new Date().toISOString().slice(0, 10);
@@ -100,11 +103,12 @@ export default async function DashboardPage() {
 
   // 3. Quotes with no decision yet (not approved, not declined)
   const awaiting = allQuotes
-    .filter(({ quote }) => ["draft", "sent", "viewed"].includes(quote.status))
+    .filter(({ quote }) => ["new", "quote_sent", "action_needed"].includes(quote.status))
     .sort((a, b) => {
       // viewed-but-undecided first (hottest), then oldest sent first
-      const rank = (s: string) => (s === "viewed" ? 0 : s === "sent" ? 1 : 2);
-      const r = rank(a.quote.status) - rank(b.quote.status);
+      const rank = (q: typeof a.quote) =>
+        q.status === "action_needed" ? 0 : q.firstViewedAt ? 1 : q.status === "quote_sent" ? 2 : 3;
+      const r = rank(a.quote) - rank(b.quote);
       if (r !== 0) return r;
       return (
         new Date(a.quote.sentAt ?? a.quote.createdAt).getTime() -
@@ -139,7 +143,7 @@ export default async function DashboardPage() {
             Installer View
           </Link>
           <Link
-            href="/quotes/new"
+            href="/projects/new"
             className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2.5 whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-amber-400" />
@@ -206,7 +210,7 @@ export default async function DashboardPage() {
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400">
                       #{job.jobNumber ?? "Pending"}
                     </span>
-                    <Link href={`/jobs/${job.id}`} className="font-semibold text-sm text-slate-900 hover:underline">
+                    <Link href={`/projects/${job.id}`} className="font-semibold text-sm text-slate-900 hover:underline">
                       {job.title}
                     </Link>
                   </div>
@@ -235,7 +239,7 @@ export default async function DashboardPage() {
               Overdue, scheduled today, in progress, rush, or still missing an install date.
             </p>
           </div>
-          <Link href="/jobs" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+          <Link href="/projects" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
             All jobs →
           </Link>
         </div>
@@ -249,7 +253,7 @@ export default async function DashboardPage() {
             {installNow.map(({ job, customer, when }) => (
               <Link
                 key={job.id}
-                href={`/jobs/${job.id}`}
+                href={`/projects/${job.id}`}
                 className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50 transition"
               >
                 <div className="min-w-0">
@@ -317,7 +321,7 @@ export default async function DashboardPage() {
               Every job that isn&apos;t paid or cancelled yet, with where it&apos;s stuck.
             </p>
           </div>
-          <Link href="/jobs" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+          <Link href="/projects" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
             Jobs board →
           </Link>
         </div>
@@ -343,14 +347,14 @@ export default async function DashboardPage() {
                   <tr key={job.id} className="hover:bg-slate-50/80">
                     <td className="py-3 px-4 whitespace-nowrap">
                       <Link
-                        href={`/jobs/${job.id}`}
+                        href={`/projects/${job.id}`}
                         className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400"
                       >
                         {job.jobNumber ? `#${job.jobNumber}` : "⏳ Pending"}
                       </Link>
                     </td>
                     <td className="py-3 px-4">
-                      <Link href={`/jobs/${job.id}`} className="font-semibold text-slate-900 hover:text-amber-600">
+                      <Link href={`/projects/${job.id}`} className="font-semibold text-slate-900 hover:text-amber-600">
                         {job.title}
                       </Link>
                       <div className="text-xs text-slate-500">{customer.name}</div>
@@ -387,7 +391,7 @@ export default async function DashboardPage() {
               Not approved and not declined. Opened-but-undecided quotes are listed first.
             </p>
           </div>
-          <Link href="/quotes" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+          <Link href="/projects?status=quote_sent" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
             All quotes →
           </Link>
         </div>
@@ -412,11 +416,15 @@ export default async function DashboardPage() {
                       <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                         {quote.quoteNumber}
                       </span>
-                      {quote.status === "viewed" ? (
+                      {quote.status === "action_needed" ? (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 whitespace-nowrap">
+                          Client asked for changes
+                        </span>
+                      ) : quote.firstViewedAt ? (
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
                           Customer opened it {dayLabel(viewedDays)}
                         </span>
-                      ) : quote.status === "sent" ? (
+                      ) : quote.status === "quote_sent" ? (
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
                           Sent {dayLabel(sentDays)} • not opened
                         </span>
@@ -442,7 +450,7 @@ export default async function DashboardPage() {
                     </span>
                     <CopyQuoteLinkButton publicToken={quote.publicToken} />
                     <Link
-                      href={`/q/${quote.publicToken}`}
+                      href={`/projects/${quote.id}`}
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3 py-1.5 whitespace-nowrap"
                     >
                       Open <ExternalLink className="w-3.5 h-3.5 text-amber-600" />

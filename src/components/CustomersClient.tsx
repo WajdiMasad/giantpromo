@@ -287,10 +287,10 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
                   {c.province} Tax Rules Active
                 </span>
                 <Link
-                  href={`/quotes/new?customerId=${c.id}`}
+                  href={`/projects/new?customerId=${c.id}`}
                   className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:underline"
                 >
-                  + New Quote for {c.name} →
+                  + New project for {c.name} →
                 </Link>
               </div>
             </div>

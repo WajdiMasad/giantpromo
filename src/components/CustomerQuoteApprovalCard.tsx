@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Copy, Mail, Printer, ShieldCheck } from "lucide-react";
-import { approveQuoteAction } from "@/app/actions";
+import React, { useState, useTransition } from "react";
+import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { approveQuoteAction, declineQuoteAction } from "@/app/actions";
 
 export function CustomerQuoteApprovalCard({
   publicToken,
@@ -32,23 +31,11 @@ export function CustomerQuoteApprovalCard({
   const cleanInitialName = defaultSignerName.includes("@") ? "" : defaultSignerName;
   const [signerName, setSignerName] = useState(cleanInitialName);
   const [signerEmail, setSignerEmail] = useState(defaultSignerEmail);
-  const [shareUrl, setShareUrl] = useState(`http://localhost:3000/q/${publicToken}`);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    setShareUrl(window.location.href);
-  }, [publicToken]);
-
-  const greetingName = cleanInitialName || "there";
-  const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-    customerEmail
-  )}&su=${encodeURIComponent(
-    `Giant Promotions Quote ${quoteNumber} — Review & Approve Online`
-  )}&body=${encodeURIComponent(
-    `Hi ${greetingName},\n\nYour quote (${quoteNumber}) from Giant Promotions is ready to view and approve online:\n${shareUrl}\n\nAs soon as you click Approve, our production & installation team will schedule your job.\n\nThank you,\nGiant Promotions Limited\n902-456-6487`
-  )}`;
+  const [showDecline, setShowDecline] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineSent, setDeclineSent] = useState(false);
 
   if (status === "approved") {
     return (
@@ -75,69 +62,32 @@ export function CustomerQuoteApprovalCard({
               {jobNumber ? `#${jobNumber}` : "⏳ Waiting for Sage number"}
             </strong>
           </div>
-          {jobId && (
-            <Link
-              href={`/jobs/${jobId}`}
-              className="text-xs font-semibold text-emerald-700 hover:underline whitespace-nowrap"
-            >
-              Open Internal Job Record →
-            </Link>
-          )}
         </div>
+      </div>
+    );
+  }
+
+  if (status === "lost" || status === "cancelled") {
+    return (
+      <div className="rounded-2xl bg-slate-100 border border-slate-300 p-6 text-sm text-slate-700">
+        This quote is no longer active. Please contact Giant Promotions at 902-456-6487 if you have questions.
+      </div>
+    );
+  }
+
+  if (status === "action_needed" || declineSent) {
+    return (
+      <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 p-6 space-y-1">
+        <div className="text-base font-bold text-amber-950">Thanks — we&apos;ve got your request</div>
+        <p className="text-sm text-amber-900">
+          Our team will review your changes and send an updated quote. You can also call us at 902-456-6487.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-5 pt-2">
-      {/* Staff Toolbar (Hidden when printing) */}
-      <div className="rounded-2xl bg-slate-900 text-slate-100 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-3 text-xs">
-          <Link
-            href="/quotes"
-            className="inline-flex items-center gap-1 text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            All Quotes
-          </Link>
-          <span className="text-slate-600">|</span>
-          <span className="text-slate-300">
-            <strong className="text-white">Staff Share Bar:</strong> Copy link or send via Workspace Gmail
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 whitespace-nowrap transition"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            Print / PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-xs px-3 py-2 whitespace-nowrap transition"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            {copied ? "✓ Link Copied!" : "Copy Approval Link"}
-          </button>
-          <a
-            href={gmailComposeUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-2 whitespace-nowrap transition"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            Send via Gmail
-          </a>
-        </div>
-      </div>
-
       {/* Customer Signature Box */}
       <div className="rounded-2xl border-2 border-slate-900 p-6 space-y-4 bg-white">
         <div className="flex items-center justify-between gap-2.5">
@@ -231,6 +181,60 @@ export function CustomerQuoteApprovalCard({
             ? "Approving & Allocating Sage Master Number…"
             : "✓ Approve Quote & Schedule Job"}
         </button>
+
+        <div className="pt-2 border-t border-slate-100">
+          {!showDecline ? (
+            <button
+              type="button"
+              onClick={() => setShowDecline(true)}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+            >
+              Need changes, or not going ahead? Let us know
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <label htmlFor="quote-decline-reason" className="block text-xs font-semibold text-slate-700">
+                What would you like changed, or why are you declining?
+              </label>
+              <textarea
+                id="quote-decline-reason"
+                name="declineReason"
+                rows={3}
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isPending || !declineReason.trim()}
+                  onClick={() => {
+                    setError(null);
+                    startTransition(async () => {
+                      const res = await declineQuoteAction({
+                        publicToken,
+                        reason: declineReason,
+                        name: signerName,
+                      });
+                      if (!res.ok) setError(res.error);
+                      else setDeclineSent(true);
+                    });
+                  }}
+                  className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 disabled:opacity-50 cursor-pointer"
+                >
+                  Send to Giant Promotions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDecline(false)}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

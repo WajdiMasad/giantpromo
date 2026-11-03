@@ -85,7 +85,7 @@ export function InstallerJobCard({
             )}
           </div>
           <Link
-            href={`/jobs/${job.id}`}
+            href={`/projects/${job.id}`}
             className="block text-base sm:text-lg font-bold text-slate-900 hover:text-amber-600 mt-1.5"
           >
             {job.title}

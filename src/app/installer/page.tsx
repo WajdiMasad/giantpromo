@@ -25,7 +25,7 @@ export default async function InstallerPortalPage() {
   const allFiles = await db.select().from(jobFiles);
 
   const activeRows = allRows.filter(({ job }) => {
-    if (job.status === "cancelled" || job.status === "paid" || job.status === "invoiced") {
+    if (!["approved", "scheduled", "in_progress", "installed"].includes(job.status)) {
       return false;
     }
     if (user?.role === "installer") {

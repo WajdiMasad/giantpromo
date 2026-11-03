@@ -73,95 +73,48 @@ export const customers = pgTable(
   (t) => [uniqueIndex("customers_sage_id_idx").on(t.sageId)]
 );
 
-export type QuoteStatus =
-  | "draft"
-  | "sent"
-  | "viewed"
-  | "approved"
-  | "declined"
-  | "expired";
-
-export const quotes = pgTable(
-  "quotes",
-  {
-    id: serial("id").primaryKey(),
-    quoteNumber: text("quote_number").notNull(),
-    publicToken: text("public_token").notNull(),
-    customerId: integer("customer_id")
-      .notNull()
-      .references(() => customers.id),
-    title: text("title").notNull(),
-    poReference: text("po_reference").default(""),
-    siteAddress: text("site_address").default(""),
-    siteProvince: text("site_province").notNull().default("NS"),
-    lat: doublePrecision("lat"),
-    lng: doublePrecision("lng"),
-    status: text("status").$type<QuoteStatus>().notNull().default("draft"),
-    subtotalCents: integer("subtotal_cents").notNull().default(0),
-    taxRatePpm: integer("tax_rate_ppm").notNull().default(140000),
-    taxLabel: text("tax_label").notNull().default("14% HST"),
-    taxCents: integer("tax_cents").notNull().default(0),
-    totalCents: integer("total_cents").notNull().default(0),
-    notes: text("notes").default(""),
-    customerTerms: text("customer_terms").default(""),
-    validUntil: text("valid_until"), // YYYY-MM-DD
-    sentAt: timestamp("sent_at", { withTimezone: true }),
-    sentByUserId: integer("sent_by_user_id").references(() => users.id),
-    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
-    approvedByName: text("approved_by_name"),
-    approvedByEmail: text("approved_by_email"),
-    approvedIp: text("approved_ip"),
-    declineReason: text("decline_reason"),
-    createdByUserId: integer("created_by_user_id").references(() => users.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    uniqueIndex("quotes_number_idx").on(t.quoteNumber),
-    uniqueIndex("quotes_public_token_idx").on(t.publicToken),
-  ]
-);
-
-export const quoteItems = pgTable("quote_items", {
-  id: serial("id").primaryKey(),
-  quoteId: integer("quote_id")
-    .notNull()
-    .references(() => quotes.id, { onDelete: "cascade" }),
-  sortOrder: integer("sort_order").notNull().default(0),
-  description: text("description").notNull(),
-  quantity: text("quantity").notNull().default("1"),
-  unitPriceCents: integer("unit_price_cents").notNull().default(0),
-  netCents: integer("net_cents").notNull().default(0),
-  taxCents: integer("tax_cents").notNull().default(0),
-  totalCents: integer("total_cents").notNull().default(0),
-  taxExempt: boolean("tax_exempt").notNull().default(false),
-  calculatorMetaJson: text("calculator_meta_json"),
-});
-
-export type JobStatus =
+/**
+ * One record for the whole life of a piece of work (like Goodshuffle's Project):
+ * New -> Quote Sent -> (Action Needed) -> Signed -> Scheduled -> In Progress ->
+ * Installed -> Invoiced -> Paid, or Lost / Cancelled.
+ * The Q-number exists from creation; the job number is ALWAYS the Sage invoice number
+ * and only exists once the project is signed.
+ */
+export type ProjectStatus =
+  | "new"
+  | "quote_sent"
+  | "action_needed"
   | "approved"
   | "scheduled"
   | "in_progress"
   | "installed"
   | "invoiced"
   | "paid"
+  | "lost"
   | "cancelled";
+export type JobStatus = ProjectStatus;
 
-export type SageSyncStatus = "pending_number" | "synced" | "failed" | "voided";
+export type SageSyncStatus =
+  | "not_started"
+  | "pending_number"
+  | "synced"
+  | "failed"
+  | "voided";
 export type SagePaymentStatus = "DRAFT" | "UNPAID" | "PART_PAID" | "PAID" | "VOID";
 
-export const jobs = pgTable(
-  "jobs",
+export const projects = pgTable(
+  "projects",
   {
     id: serial("id").primaryKey(),
+    /** Quote number (Q-1001) — exists from creation. */
+    quoteNumber: text("quote_number").notNull(),
+    publicToken: text("public_token").notNull(),
     /**
      * Master numbering rule (§2a): jobNumber is ALWAYS the Sage invoice number
-     * (e.g. "232016"). Null only while sageSyncStatus = 'pending_number'.
+     * (e.g. "232016"). Null until signed, and while sageSyncStatus = 'pending_number'.
      */
     jobNumber: text("job_number"),
     idempotencyKey: text("idempotency_key").notNull(),
-    quoteId: integer("quote_id").references(() => quotes.id),
     customerId: integer("customer_id")
       .notNull()
       .references(() => customers.id),
@@ -172,7 +125,7 @@ export const jobs = pgTable(
     siteProvince: text("site_province").notNull().default("NS"),
     lat: doublePrecision("lat"),
     lng: doublePrecision("lng"),
-    status: text("status").$type<JobStatus>().notNull().default("approved"),
+    status: text("status").$type<ProjectStatus>().notNull().default("new"),
     priority: text("priority")
       .$type<"normal" | "rush" | "urgent">()
       .notNull()
@@ -184,6 +137,20 @@ export const jobs = pgTable(
     taxLabel: text("tax_label").notNull().default("14% HST"),
     taxCents: integer("tax_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull().default(0),
+    // Quote / contract phase
+    customerTerms: text("customer_terms").default(""),
+    validUntil: text("valid_until"), // YYYY-MM-DD
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sentByUserId: integer("sent_by_user_id").references(() => users.id),
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByName: text("approved_by_name"),
+    approvedByEmail: text("approved_by_email"),
+    approvedIp: text("approved_ip"),
+    declineReason: text("decline_reason"),
+    createdByUserId: integer("created_by_user_id").references(() => users.id),
+    // Production / install phase
     installerNotes: text("installer_notes").default(""),
     internalNotes: text("internal_notes").default(""),
     driveFolderId: text("drive_folder_id"),
@@ -194,12 +161,12 @@ export const jobs = pgTable(
     sageSyncStatus: text("sage_sync_status")
       .$type<SageSyncStatus>()
       .notNull()
-      .default("pending_number"),
+      .default("not_started"),
     sageSyncError: text("sage_sync_error"),
     sagePaymentStatus: text("sage_payment_status")
       .$type<SagePaymentStatus>()
       .notNull()
-      .default("UNPAID"),
+      .default("DRAFT"),
     invoiceSentAt: timestamp("invoice_sent_at", { withTimezone: true }),
     invoiceSentByUserId: integer("invoice_sent_by_user_id").references(() => users.id),
     invoiceSentToEmail: text("invoice_sent_to_email"),
@@ -208,17 +175,22 @@ export const jobs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("jobs_job_number_idx").on(t.jobNumber),
-    uniqueIndex("jobs_idempotency_key_idx").on(t.idempotencyKey),
+    uniqueIndex("projects_quote_number_idx").on(t.quoteNumber),
+    uniqueIndex("projects_public_token_idx").on(t.publicToken),
+    uniqueIndex("projects_job_number_idx").on(t.jobNumber),
+    uniqueIndex("projects_idempotency_key_idx").on(t.idempotencyKey),
   ]
 );
+/** Back-compat alias used throughout the code base. */
+export const jobs = projects;
 
-export const jobItems = pgTable("job_items", {
+export const projectItems = pgTable("project_items", {
   id: serial("id").primaryKey(),
-  jobId: integer("job_id")
+  jobId: integer("project_id")
     .notNull()
-    .references(() => jobs.id, { onDelete: "cascade" }),
+    .references(() => projects.id, { onDelete: "cascade" }),
   sortOrder: integer("sort_order").notNull().default(0),
+  groupName: text("group_name").notNull().default(""),
   description: text("description").notNull(),
   quantity: text("quantity").notNull().default("1"),
   unitPriceCents: integer("unit_price_cents").notNull().default(0),
@@ -226,22 +198,27 @@ export const jobItems = pgTable("job_items", {
   taxCents: integer("tax_cents").notNull().default(0),
   totalCents: integer("total_cents").notNull().default(0),
   taxExempt: boolean("tax_exempt").notNull().default(false),
+  /** Shown only on the internal work order / pull sheet, never to the customer. */
+  hiddenFromCustomer: boolean("hidden_from_customer").notNull().default(false),
+  calculatorMetaJson: text("calculator_meta_json"),
 });
+export const jobItems = projectItems;
 
-export const jobAssignments = pgTable(
-  "job_assignments",
+export const projectAssignments = pgTable(
+  "project_assignments",
   {
     id: serial("id").primaryKey(),
-    jobId: integer("job_id")
+    jobId: integer("project_id")
       .notNull()
-      .references(() => jobs.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("job_assignments_unique_idx").on(t.jobId, t.userId)]
+  (t) => [uniqueIndex("project_assignments_unique_idx").on(t.jobId, t.userId)]
 );
+export const jobAssignments = projectAssignments;
 
 export type JobFileKind =
   | "proof"
@@ -251,11 +228,11 @@ export type JobFileKind =
   | "install_photo"
   | "document";
 
-export const jobFiles = pgTable("job_files", {
+export const projectFiles = pgTable("project_files", {
   id: serial("id").primaryKey(),
-  jobId: integer("job_id")
+  jobId: integer("project_id")
     .notNull()
-    .references(() => jobs.id, { onDelete: "cascade" }),
+    .references(() => projects.id, { onDelete: "cascade" }),
   uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
   uploadedByName: text("uploaded_by_name").notNull().default("Staff"),
   kind: text("kind").$type<JobFileKind>().notNull().default("install_photo"),
@@ -273,6 +250,8 @@ export const jobFiles = pgTable("job_files", {
     .default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const jobFiles = projectFiles;
 
 export type EquipmentStatus = "available" | "rented" | "maintenance" | "retired";
 

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  FileText,
   Briefcase,
   Signpost,
   Repeat,
@@ -55,18 +54,11 @@ export function AppShell({
       roles: ["admin", "office"],
     },
     {
-      href: "/quotes",
-      label: "Quotes",
-      shortLabel: "Quotes",
-      icon: FileText,
-      roles: ["admin", "office"],
-    },
-    {
-      href: "/jobs",
-      label: "Jobs & Sage Invoices",
-      shortLabel: "Jobs",
+      href: "/projects",
+      label: "Projects",
+      shortLabel: "Projects",
       icon: Briefcase,
-      badge: readyToSendCount > 0 ? `${readyToSendCount} ready` : undefined,
+      badge: readyToSendCount > 0 ? `${readyToSendCount} to invoice` : undefined,
       roles: ["admin", "office"],
     },
     {
@@ -122,11 +114,11 @@ export function AppShell({
 
           <div className="mt-4">
             <Link
-              href="/quotes/new"
+              href="/projects/new"
               className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm py-2.5 px-4 transition shadow-sm"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
-              New Quote
+              New Project
             </Link>
           </div>
         </div>

@@ -29,11 +29,14 @@ import {
 } from "@/lib/sage";
 import {
   approveAndSendRecurringBatchWorkflow,
-  approveQuoteAndCreateJobWorkflow,
+  approveProjectWorkflow,
   bookEquipmentRentalWorkflow,
   buildOrGetRecurringBatchWorkflow,
-  createQuoteWorkflow,
+  createProjectWorkflow,
+  declineQuoteWorkflow,
+  markProjectLostWorkflow,
   returnEquipmentRentalWorkflow,
+  sendQuoteToClientWorkflow,
 } from "@/lib/workflows";
 
 export async function switchActiveUserAction(formData: FormData) {
@@ -43,7 +46,7 @@ export async function switchActiveUserAction(formData: FormData) {
   revalidatePath("/", "layout");
 }
 
-export async function createQuoteAction(input: {
+export async function createProjectAction(input: {
   customerId: number;
   title: string;
   poReference: string;
@@ -52,7 +55,15 @@ export async function createQuoteAction(input: {
   notes: string;
   customerTerms: string;
   validUntil: string;
-  lines: { description: string; quantity: string; unitPriceDollars: string; taxExempt?: boolean }[];
+  sendNow?: boolean;
+  lines: {
+    description: string;
+    quantity: string;
+    unitPriceDollars: string;
+    taxExempt?: boolean;
+    groupName?: string;
+    hiddenFromCustomer?: boolean;
+  }[];
 }) {
   try {
     const user = await getCurrentUser();
@@ -63,9 +74,11 @@ export async function createQuoteAction(input: {
         quantity: l.quantity || "1",
         unitPriceCents: toCents(l.unitPriceDollars || "0"),
         taxExempt: Boolean(l.taxExempt),
+        groupName: (l.groupName ?? "").trim(),
+        hiddenFromCustomer: Boolean(l.hiddenFromCustomer),
       }));
 
-    const quote = await createQuoteWorkflow({
+    const project = await createProjectWorkflow({
       customerId: input.customerId,
       title: input.title,
       poReference: input.poReference,
@@ -75,13 +88,71 @@ export async function createQuoteAction(input: {
       customerTerms: input.customerTerms,
       validUntil: input.validUntil,
       lines: pricedLines,
+      sendNow: input.sendNow,
       actorUserId: user?.id,
       actorName: user?.name ?? "Office Staff",
     });
 
     revalidatePath("/");
-    revalidatePath("/quotes");
-    return { ok: true as const, quoteId: quote.id, publicToken: quote.publicToken, quoteNumber: quote.quoteNumber };
+    revalidatePath("/projects");
+    return {
+      ok: true as const,
+      projectId: project.id,
+      publicToken: project.publicToken,
+      quoteNumber: project.quoteNumber,
+    };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+export async function sendQuoteToClientAction(projectId: number) {
+  try {
+    const user = await getCurrentUser();
+    await sendQuoteToClientWorkflow({
+      projectId,
+      actorUserId: user?.id,
+      actorName: user?.name ?? "Office Staff",
+    });
+    revalidatePath("/");
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${projectId}`);
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+export async function markProjectLostAction(input: { projectId: number; reason: string }) {
+  try {
+    const user = await getCurrentUser();
+    await markProjectLostWorkflow({
+      projectId: input.projectId,
+      reason: input.reason,
+      actorUserId: user?.id,
+      actorName: user?.name ?? "Office Staff",
+    });
+    revalidatePath("/");
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${input.projectId}`);
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+/** Public (customer) action: decline or request changes on a quote. */
+export async function declineQuoteAction(input: { publicToken: string; reason: string; name?: string }) {
+  try {
+    await declineQuoteWorkflow({
+      publicToken: input.publicToken,
+      reason: input.reason,
+      byName: input.name,
+    });
+    revalidatePath("/");
+    revalidatePath("/projects");
+    revalidatePath(`/q/${input.publicToken}`);
+    return { ok: true as const };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
   }
@@ -89,30 +160,30 @@ export async function createQuoteAction(input: {
 
 export async function approveQuoteAction(input: {
   publicToken?: string;
-  quoteId?: number;
+  projectId?: number;
   approvedByName: string;
   approvedByEmail?: string;
   scheduledDate?: string;
 }) {
   try {
-    const result = await approveQuoteAndCreateJobWorkflow({
-      quoteIdOrToken: { quoteId: input.quoteId, publicToken: input.publicToken },
+    const result = await approveProjectWorkflow({
+      projectIdOrToken: { projectId: input.projectId, publicToken: input.publicToken },
       approvedByName: input.approvedByName,
       approvedByEmail: input.approvedByEmail,
       scheduledDate: input.scheduledDate,
     });
 
     revalidatePath("/");
-    revalidatePath("/quotes");
-    revalidatePath("/jobs");
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${result.project.id}`);
     if (input.publicToken) {
       revalidatePath(`/q/${input.publicToken}`);
     }
 
     return {
       ok: true as const,
-      jobId: result.job.id,
-      jobNumber: result.job.jobNumber,
+      jobId: result.project.id,
+      jobNumber: result.project.jobNumber,
     };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
@@ -144,15 +215,15 @@ export async function updateJobStatusAction(input: {
     await db.insert(activityLog).values({
       actorUserId: user?.id ?? null,
       actorName: user?.name ?? "Staff",
-      entityType: "job",
+      entityType: "project",
       entityId: String(job.id),
       action: `job.status_${input.status}`,
       summary: `Job #${job.jobNumber ?? job.id} marked ${input.status.replace("_", " ")}`,
     });
 
     revalidatePath("/");
-    revalidatePath("/jobs");
-    revalidatePath(`/jobs/${input.jobId}`);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${input.jobId}`);
     revalidatePath("/installer");
     return { ok: true as const };
   } catch (err) {
@@ -174,8 +245,8 @@ export async function sendJobInvoiceAction(input: {
     });
 
     revalidatePath("/");
-    revalidatePath("/jobs");
-    revalidatePath(`/jobs/${input.jobId}`);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${input.jobId}`);
     return { ok: true as const, invoiceNumber: res.invoiceNumber, email: res.email };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
@@ -191,8 +262,8 @@ export async function voidJobInSageAction(input: {
     await voidSageInvoiceForJob(input.jobId, input.reason, user?.name ?? "Admin");
 
     revalidatePath("/");
-    revalidatePath("/jobs");
-    revalidatePath(`/jobs/${input.jobId}`);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${input.jobId}`);
     return { ok: true as const };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
@@ -203,8 +274,8 @@ export async function retrySageAllocationAction(jobId: number) {
   try {
     const res = await allocateSageInvoiceForJob(jobId);
     revalidatePath("/");
-    revalidatePath("/jobs");
-    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${jobId}`);
     return { ok: true as const, sageInvoiceNumber: res.sageInvoiceNumber };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
@@ -243,7 +314,7 @@ export async function markSageInvoicePaidAction(sageInvoiceNumber: string) {
     });
 
     revalidatePath("/");
-    revalidatePath("/jobs");
+    revalidatePath("/projects");
     return { ok: true as const };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
@@ -271,7 +342,7 @@ export async function toggleAssignInstallerAction(input: {
       });
     }
 
-    revalidatePath(`/jobs/${input.jobId}`);
+    revalidatePath(`/projects/${input.jobId}`);
     revalidatePath("/installer");
     return { ok: true as const };
   } catch (err) {
@@ -329,13 +400,13 @@ export async function uploadJobPhotoAction(formData: FormData) {
     await db.insert(activityLog).values({
       actorUserId: user?.id ?? null,
       actorName: user?.name ?? "Installer",
-      entityType: "job",
+      entityType: "project",
       entityId: String(job.id),
       action: "job.file_uploaded",
       summary: `Uploaded ${kind.replace("_", " ")} "${file.name}" to Job #${job.jobNumber ?? job.id} (mirrored to Drive)`,
     });
 
-    revalidatePath(`/jobs/${job.id}`);
+    revalidatePath(`/projects/${job.id}`);
     revalidatePath("/installer");
     return { ok: true as const };
   } catch (err) {
@@ -550,7 +621,7 @@ export async function createCustomerAction(input: {
       .returning();
 
     revalidatePath("/customers");
-    revalidatePath("/quotes/new");
+    revalidatePath("/projects/new");
     revalidatePath("/equipment");
     return { ok: true as const, customerId: created!.id };
   } catch (err) {

@@ -5,10 +5,14 @@ import { seedInitialDataIfEmpty } from "@/db/seed";
 import * as schema from "@/db/schema";
 import {
   approveAndSendRecurringBatchWorkflow,
-  approveQuoteAndCreateJobWorkflow,
+  approveProjectWorkflow,
+  declineQuoteWorkflow,
+  markProjectLostWorkflow,
+  recordQuoteViewWorkflow,
+  sendQuoteToClientWorkflow,
   bookEquipmentRentalWorkflow,
   buildOrGetRecurringBatchWorkflow,
-  createQuoteWorkflow,
+  createProjectWorkflow,
   returnEquipmentRentalWorkflow,
 } from "../workflows";
 import { sendJobInvoiceToCustomer, voidSageInvoiceForJob } from "../sage";
@@ -24,7 +28,7 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     const db = await getDb();
     const [customer] = await db.select().from(schema.customers).limit(1);
 
-    const quote = await createQuoteWorkflow({
+    const quote = await createProjectWorkflow({
       customerId: customer!.id,
       title: "Dealership Pylon Sign Faces",
       poReference: "PO-99001",
@@ -41,8 +45,8 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     expect(quote.totalCents).toBe(1368_00);
 
     // Approve quote via public token (as customer does online)
-    const { job } = await approveQuoteAndCreateJobWorkflow({
-      quoteIdOrToken: { publicToken: quote.publicToken },
+    const { project: job } = await approveProjectWorkflow({
+      projectIdOrToken: { publicToken: quote.publicToken },
       approvedByName: "Mark O'Regan",
       approvedByEmail: "marketing@oregans.com",
     });
@@ -56,12 +60,12 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     expect(job.invoiceSentAt).toBeNull();
 
     // Approving a second time (retry/double-click) returns the exact same job & number
-    const retry = await approveQuoteAndCreateJobWorkflow({
-      quoteIdOrToken: { publicToken: quote.publicToken },
+    const retry = await approveProjectWorkflow({
+      projectIdOrToken: { publicToken: quote.publicToken },
       approvedByName: "Mark O'Regan",
     });
-    expect(retry.job.id).toBe(job.id);
-    expect(retry.job.jobNumber).toBe("232016");
+    expect(retry.project.id).toBe(job.id);
+    expect(retry.project.jobNumber).toBe("232016");
 
     // Staff clicks "Send Invoice" -> records timestamp and recipient
     const sent = await sendJobInvoiceToCustomer({
@@ -71,6 +75,107 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     });
     expect(sent.invoiceNumber).toBe("232016");
     expect(sent.email).toBe("accounting@oregans.com");
+  });
+
+  it("runs one Project record through New -> Quote Sent -> Action Needed -> Signed with no job number until signed", async () => {
+    const db = await getDb();
+    const [customer] = await db.select().from(schema.customers).limit(1);
+
+    // Hidden internal-only lines are forced to $0 and flagged
+    const draft = await createProjectWorkflow({
+      customerId: customer!.id,
+      title: "Lobby Wall Graphics",
+      siteProvince: "NS",
+      lines: [
+        { description: "Printed wall mural", quantity: 1, unitPriceCents: 500_00, groupName: "Graphics" },
+        { description: "Scissor lift (internal)", quantity: 1, unitPriceCents: 999_00, hiddenFromCustomer: true },
+      ],
+      actorName: "Admin",
+    });
+    expect(draft.status).toBe("new");
+    expect(draft.jobNumber).toBeNull();
+    expect(draft.sageSyncStatus).toBe("not_started");
+    expect(draft.subtotalCents).toBe(500_00); // hidden line contributes nothing
+    const items = await db
+      .select()
+      .from(schema.projectItems)
+      .where(eq(schema.projectItems.jobId, draft.id));
+    expect(items.find((i) => i.hiddenFromCustomer)?.unitPriceCents).toBe(0);
+    expect(items.find((i) => i.groupName === "Graphics")).toBeDefined();
+
+    // Send to client
+    const sent = await sendQuoteToClientWorkflow({ projectId: draft.id, actorName: "Admin" });
+    expect(sent.status).toBe("quote_sent");
+    expect(sent.sentAt).not.toBeNull();
+
+    // Client opens it (first view recorded, repeat views within 5 min are not re-logged)
+    const viewed = await recordQuoteViewWorkflow(draft.publicToken, "203.0.113.9");
+    expect(viewed?.firstViewedAt).not.toBeNull();
+    await recordQuoteViewWorkflow(draft.publicToken);
+    const viewLogs = await db
+      .select()
+      .from(schema.activityLog)
+      .where(eq(schema.activityLog.action, "project.quote_viewed"));
+    expect(viewLogs.length).toBe(1);
+
+    // Client asks for changes -> Action Needed, then staff re-sends, then client signs
+    const declined = await declineQuoteWorkflow({
+      publicToken: draft.publicToken,
+      reason: "Please make the mural 2ft wider",
+    });
+    expect(declined.status).toBe("action_needed");
+    expect(declined.jobNumber).toBeNull();
+
+    await sendQuoteToClientWorkflow({ projectId: draft.id, actorName: "Admin" });
+    const { project: signed } = await approveProjectWorkflow({
+      projectIdOrToken: { publicToken: draft.publicToken },
+      approvedByName: "Sarah Johnson",
+    });
+    expect(signed.id).toBe(draft.id); // same record, not a copy
+    expect(signed.status).toBe("scheduled");
+    expect(signed.jobNumber).toBe("232016");
+    expect(signed.quoteNumber).toBe(draft.quoteNumber);
+
+    // A signed project can no longer be declined or marked lost
+    await expect(
+      declineQuoteWorkflow({ publicToken: draft.publicToken, reason: "too late" })
+    ).rejects.toThrow();
+    await expect(
+      markProjectLostWorkflow({ projectId: draft.id, reason: "x", actorName: "Admin" })
+    ).rejects.toThrow();
+  });
+
+  it("marking an unsigned quote Lost never consumes a Sage number", async () => {
+    const db = await getDb();
+    const [customer] = await db.select().from(schema.customers).limit(1);
+    const lostOne = await createProjectWorkflow({
+      customerId: customer!.id,
+      title: "Lost opportunity",
+      siteProvince: "NS",
+      lines: [{ description: "Banner", quantity: 1, unitPriceCents: 100_00 }],
+      sendNow: true,
+      actorName: "Admin",
+    });
+    const lost = await markProjectLostWorkflow({
+      projectId: lostOne.id,
+      reason: "Went with a competitor",
+      actorName: "Admin",
+    });
+    expect(lost.status).toBe("lost");
+    expect(lost.jobNumber).toBeNull();
+
+    const next = await createProjectWorkflow({
+      customerId: customer!.id,
+      title: "Next one",
+      siteProvince: "NS",
+      lines: [{ description: "Banner", quantity: 1, unitPriceCents: 100_00 }],
+      actorName: "Admin",
+    });
+    const { project } = await approveProjectWorkflow({
+      projectIdOrToken: { projectId: next.id },
+      approvedByName: "Staff",
+    });
+    expect(project.jobNumber).toBe("232016"); // the lost quote did not burn a number
   });
 
   it("voids the Sage invoice when a job is cancelled without breaking sequential numbering", async () => {

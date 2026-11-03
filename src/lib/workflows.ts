@@ -6,10 +6,8 @@ import {
   customers,
   equipment,
   equipmentRentals,
-  jobItems,
-  jobs,
-  quoteItems,
-  quotes,
+  projectItems,
+  projects,
   recurringBillingBatchItems,
   recurringBillingBatches,
   recurringBillingPlans,
@@ -23,10 +21,10 @@ import { allocateSageInvoiceForJob, withSageLock } from "./sage";
 export async function getNextQuoteNumber(): Promise<string> {
   const db = await getDb();
   const rows = await db
-    .select({ quoteNumber: quotes.quoteNumber })
-    .from(quotes)
-    .orderBy(desc(quotes.id))
-    .limit(25);
+    .select({ quoteNumber: projects.quoteNumber })
+    .from(projects)
+    .orderBy(desc(projects.id))
+    .limit(50);
 
   let maxNum = 1000;
   for (const r of rows) {
@@ -39,7 +37,21 @@ export async function getNextQuoteNumber(): Promise<string> {
   return `Q-${maxNum + 1}`;
 }
 
-export async function createQuoteWorkflow(params: {
+export type ProjectLineInput = PricedLineInput & {
+  groupName?: string;
+  /** Internal-only line (pull sheet / work order). Forced to $0 and hidden from the customer. */
+  hiddenFromCustomer?: boolean;
+};
+
+/** Statuses from which a customer (or staff) may still approve or decline. */
+const OPEN_FOR_DECISION = ["new", "quote_sent", "action_needed"];
+
+/**
+ * Create a Project. It starts as "New" (a draft) unless sendNow is set, in which case it is
+ * marked "Quote Sent" immediately. The Q-number exists from creation; the job number (the
+ * Sage invoice number) does NOT exist until the customer signs.
+ */
+export async function createProjectWorkflow(params: {
   customerId: number;
   title: string;
   poReference?: string;
@@ -48,7 +60,8 @@ export async function createQuoteWorkflow(params: {
   notes?: string;
   customerTerms?: string;
   validUntil?: string;
-  lines: PricedLineInput[];
+  lines: ProjectLineInput[];
+  sendNow?: boolean;
   actorUserId?: number;
   actorName: string;
 }) {
@@ -64,48 +77,55 @@ export async function createQuoteWorkflow(params: {
     .limit(1);
   if (!customer) throw new Error("Customer not found");
 
-  const totals = calculateDocumentTotals(params.lines, params.siteProvince, {
+  // Hidden (internal-only) lines never carry a price
+  const pricedInput = params.lines.map((l) =>
+    l.hiddenFromCustomer ? { ...l, unitPriceCents: 0 } : l
+  );
+  const totals = calculateDocumentTotals(pricedInput, params.siteProvince, {
     customerTaxExempt: customer.taxExempt,
   });
 
   const quoteNumber = await getNextQuoteNumber();
   const publicToken = `qtok-${crypto.randomBytes(12).toString("hex")}`;
+  const now = new Date();
 
-  const [createdQuote] = await db
-    .insert(quotes)
+  const [created] = await db
+    .insert(projects)
     .values({
       quoteNumber,
       publicToken,
+      idempotencyKey: `gp-project-${crypto.randomUUID()}`,
       customerId: customer.id,
       title: params.title.trim(),
+      description: (params.notes ?? "").trim(),
       poReference: (params.poReference ?? "").trim(),
       siteAddress: (params.siteAddress ?? customer.addressLine1 ?? "").trim(),
       siteProvince: totals.province,
       lat: customer.lat ?? 44.665,
       lng: customer.lng ?? -63.61,
-      status: "sent",
+      status: params.sendNow ? "quote_sent" : "new",
       subtotalCents: totals.subtotalCents,
       taxRatePpm: totals.taxRatePpm,
       taxLabel: totals.taxLabel,
       taxCents: totals.taxCents,
       totalCents: totals.totalCents,
-      notes: (params.notes ?? "").trim(),
       customerTerms:
         (params.customerTerms ?? "").trim() ||
         "Net 30 for approved commercial accounts. Quotes valid for 30 days.",
       validUntil:
         params.validUntil ||
         new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10),
-      sentAt: new Date(),
-      sentByUserId: params.actorUserId ?? null,
+      sentAt: params.sendNow ? now : null,
+      sentByUserId: params.sendNow ? (params.actorUserId ?? null) : null,
       createdByUserId: params.actorUserId ?? null,
     })
     .returning();
 
-  await db.insert(quoteItems).values(
+  await db.insert(projectItems).values(
     totals.lines.map((line, idx) => ({
-      quoteId: createdQuote!.id,
+      jobId: created!.id,
       sortOrder: idx,
+      groupName: params.lines[idx]?.groupName ?? "",
       description: line.description,
       quantity: line.quantity,
       unitPriceCents: line.unitPriceCents,
@@ -113,27 +133,177 @@ export async function createQuoteWorkflow(params: {
       taxCents: line.taxCents,
       totalCents: line.totalCents,
       taxExempt: line.taxExempt,
+      hiddenFromCustomer: Boolean(params.lines[idx]?.hiddenFromCustomer),
     }))
   );
 
   await db.insert(activityLog).values({
     actorUserId: params.actorUserId ?? null,
     actorName: params.actorName,
-    entityType: "quote",
-    entityId: String(createdQuote!.id),
-    action: "quote.created",
-    summary: `Created Quote ${quoteNumber} for ${customer.name} (${totals.taxLabel})`,
+    entityType: "project",
+    entityId: String(created!.id),
+    action: "project.created",
+    summary: `Created ${quoteNumber} for ${customer.name} (${totals.taxLabel})${params.sendNow ? " and sent it to the client" : ""}`,
   });
 
-  return createdQuote!;
+  return created!;
+}
+
+/** Mark a draft (or declined) project as sent to the customer. */
+export async function sendQuoteToClientWorkflow(params: {
+  projectId: number;
+  actorUserId?: number;
+  actorName: string;
+}) {
+  const db = await getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, params.projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found");
+  if (!["new", "quote_sent", "action_needed"].includes(project.status)) {
+    throw new Error("This project is already signed or closed, so it cannot be re-sent as a quote.");
+  }
+  const now = new Date();
+  const [updated] = await db
+    .update(projects)
+    .set({
+      status: "quote_sent",
+      sentAt: now,
+      sentByUserId: params.actorUserId ?? null,
+      declineReason: null,
+      updatedAt: now,
+    })
+    .where(eq(projects.id, project.id))
+    .returning();
+
+  await db.insert(activityLog).values({
+    actorUserId: params.actorUserId ?? null,
+    actorName: params.actorName,
+    entityType: "project",
+    entityId: String(project.id),
+    action: "project.quote_sent",
+    summary: `Sent ${project.quoteNumber} to the client`,
+  });
+  return updated!;
+}
+
+/** Record that the customer opened the public quote page (one log line per 5 minutes). */
+export async function recordQuoteViewWorkflow(publicToken: string, ip?: string) {
+  const db = await getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.publicToken, publicToken))
+    .limit(1);
+  if (!project) return null;
+
+  const now = new Date();
+  const lastMs = project.lastViewedAt ? new Date(project.lastViewedAt).getTime() : 0;
+  const shouldLog = now.getTime() - lastMs > 5 * 60_000;
+  if (!shouldLog && project.firstViewedAt) return project;
+
+  const [updated] = await db
+    .update(projects)
+    .set({
+      firstViewedAt: project.firstViewedAt ?? now,
+      lastViewedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(projects.id, project.id))
+    .returning();
+
+  await db.insert(activityLog).values({
+    actorName: "Customer",
+    entityType: "project",
+    entityId: String(project.id),
+    action: "project.quote_viewed",
+    summary: `Client viewed ${project.quoteNumber} online${ip ? ` (IP ${ip})` : ""}`,
+  });
+  return updated!;
+}
+
+/** Customer declines or asks for changes -> Action Needed. */
+export async function declineQuoteWorkflow(params: {
+  publicToken: string;
+  reason: string;
+  byName?: string;
+}) {
+  const db = await getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.publicToken, params.publicToken))
+    .limit(1);
+  if (!project) throw new Error("Quote not found");
+  if (!OPEN_FOR_DECISION.includes(project.status)) {
+    throw new Error("This quote has already been decided.");
+  }
+  const [updated] = await db
+    .update(projects)
+    .set({
+      status: "action_needed",
+      declineReason: params.reason.trim() || "Customer requested changes",
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, project.id))
+    .returning();
+
+  await db.insert(activityLog).values({
+    actorName: params.byName?.trim() || "Customer",
+    entityType: "project",
+    entityId: String(project.id),
+    action: "project.action_needed",
+    summary: `${project.quoteNumber}: client declined / requested changes — ${updated!.declineReason}`,
+  });
+  return updated!;
+}
+
+/** Staff marks a quote as lost (no longer pursuing). */
+export async function markProjectLostWorkflow(params: {
+  projectId: number;
+  reason: string;
+  actorUserId?: number;
+  actorName: string;
+}) {
+  const db = await getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, params.projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found");
+  if (!OPEN_FOR_DECISION.includes(project.status)) {
+    throw new Error("Only an unsigned quote can be marked Lost. Cancel a signed job instead.");
+  }
+  const [updated] = await db
+    .update(projects)
+    .set({
+      status: "lost",
+      declineReason: params.reason.trim() || "Marked lost",
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, project.id))
+    .returning();
+
+  await db.insert(activityLog).values({
+    actorUserId: params.actorUserId ?? null,
+    actorName: params.actorName,
+    entityType: "project",
+    entityId: String(project.id),
+    action: "project.lost",
+    summary: `${project.quoteNumber} marked Lost — ${updated!.declineReason}`,
+  });
+  return updated!;
 }
 
 /**
- * Customer or staff approves a quote -> immediately creates a Job and allocates
- * its authoritative Sage invoice number (§2a).
+ * Customer or staff signs the project -> it becomes a scheduled job and immediately gets its
+ * authoritative Sage invoice number (§2a). Same record, no copy. Idempotent.
  */
-export async function approveQuoteAndCreateJobWorkflow(params: {
-  quoteIdOrToken: { quoteId?: number; publicToken?: string };
+export async function approveProjectWorkflow(params: {
+  projectIdOrToken: { projectId?: number; publicToken?: string };
   approvedByName: string;
   approvedByEmail?: string;
   approvedIp?: string;
@@ -145,112 +315,65 @@ export async function approveQuoteAndCreateJobWorkflow(params: {
   }
 
   const db = await getDb();
-  const whereClause = params.quoteIdOrToken.quoteId
-    ? eq(quotes.id, params.quoteIdOrToken.quoteId)
-    : eq(quotes.publicToken, params.quoteIdOrToken.publicToken ?? "");
+  const whereClause = params.projectIdOrToken.projectId
+    ? eq(projects.id, params.projectIdOrToken.projectId)
+    : eq(projects.publicToken, params.projectIdOrToken.publicToken ?? "");
 
-  const [quote] = await db.select().from(quotes).where(whereClause).limit(1);
-  if (!quote) throw new Error("Quote not found");
+  const [project] = await db.select().from(projects).where(whereClause).limit(1);
+  if (!project) throw new Error("Quote not found");
 
-  // Idempotent: if already approved and a job already exists for this quote, return that job!
-  const [existingJob] = await db
-    .select()
-    .from(jobs)
-    .where(eq(jobs.quoteId, quote.id))
-    .limit(1);
-  if (existingJob) {
-    return { quote, job: existingJob };
+  // Idempotent: already signed -> return the same project (and its same Sage number)
+  if (project.approvedAt) {
+    return { project };
+  }
+  if (!OPEN_FOR_DECISION.includes(project.status)) {
+    throw new Error("This quote can no longer be approved (it is closed or lost).");
   }
 
-  const items = await db
-    .select()
-    .from(quoteItems)
-    .where(eq(quoteItems.quoteId, quote.id));
-
   const now = new Date();
-  const [updatedQuote] = await db
-    .update(quotes)
-    .set({
-      status: "approved",
-      firstViewedAt: quote.firstViewedAt ?? now,
-      approvedAt: now,
-      approvedByName: signer,
-      approvedByEmail: params.approvedByEmail?.trim() ?? null,
-      approvedIp: params.approvedIp ?? null,
-      updatedAt: now,
-    })
-    .where(eq(quotes.id, quote.id))
-    .returning();
-
-  const idempotencyKey = `gp-quote-${quote.id}`;
   const defaultSchedule =
     params.scheduledDate ||
     new Date(Date.now() + 2 * 86400_000).toISOString().slice(0, 10);
 
-  const [createdJob] = await db
-    .insert(jobs)
-    .values({
-      jobNumber: null, // Assigned exclusively by Sage below!
-      idempotencyKey,
-      quoteId: quote.id,
-      customerId: quote.customerId,
-      title: quote.title,
-      description: quote.notes ?? "",
-      poReference: quote.poReference ?? "",
-      siteAddress: quote.siteAddress ?? "",
-      siteProvince: quote.siteProvince,
-      lat: quote.lat,
-      lng: quote.lng,
+  await db
+    .update(projects)
+    .set({
       status: "scheduled",
-      priority: "normal",
-      scheduledDate: defaultSchedule,
-      subtotalCents: quote.subtotalCents,
-      taxRatePpm: quote.taxRatePpm,
-      taxLabel: quote.taxLabel,
-      taxCents: quote.taxCents,
-      totalCents: quote.totalCents,
+      firstViewedAt: project.firstViewedAt ?? now,
+      approvedAt: now,
+      approvedByName: signer,
+      approvedByEmail: params.approvedByEmail?.trim() ?? null,
+      approvedIp: params.approvedIp ?? null,
+      scheduledDate: project.scheduledDate ?? defaultSchedule,
       sageSyncStatus: "pending_number",
+      sagePaymentStatus: "UNPAID",
+      declineReason: null,
+      updatedAt: now,
     })
-    .returning();
-
-  if (items.length > 0) {
-    await db.insert(jobItems).values(
-      items.map((item, idx) => ({
-        jobId: createdJob!.id,
-        sortOrder: idx,
-        description: item.description,
-        quantity: item.quantity,
-        unitPriceCents: item.unitPriceCents,
-        netCents: item.netCents,
-        taxCents: item.taxCents,
-        totalCents: item.totalCents,
-        taxExempt: item.taxExempt,
-      }))
-    );
-  }
+    .where(eq(projects.id, project.id));
 
   // Immediately allocate authoritative Sage invoice number (232016+)
   try {
-    await allocateSageInvoiceForJob(createdJob!.id);
+    await allocateSageInvoiceForJob(project.id);
   } catch {
-    // If Sage is temporarily unreachable, job remains in 'pending_number' state as designed (§2a).
+    // If Sage is temporarily unreachable, the project stays in 'pending_number' as designed (§2a).
   }
 
-  const [finalJob] = await db
+  const [finalProject] = await db
     .select()
-    .from(jobs)
-    .where(eq(jobs.id, createdJob!.id))
+    .from(projects)
+    .where(eq(projects.id, project.id))
     .limit(1);
 
   await db.insert(activityLog).values({
     actorName: signer,
-    entityType: "quote",
-    entityId: String(quote.id),
-    action: "quote.approved",
-    summary: `Quote ${quote.quoteNumber} approved by ${signer} -> Job #${finalJob?.jobNumber ?? "Pending Sage"}`,
+    entityType: "project",
+    entityId: String(project.id),
+    action: "project.signed",
+    summary: `${project.quoteNumber} signed by ${signer} -> Job #${finalProject?.jobNumber ?? "Pending Sage"}`,
   });
 
-  return { quote: updatedQuote!, job: finalJob! };
+  return { project: finalProject! };
 }
 
 /**

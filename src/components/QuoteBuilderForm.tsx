@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useMemo, useState, useTransition } from "react";
+import React, { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Plus, Trash2, CheckCircle2, Sparkles } from "lucide-react";
-import { createQuoteAction } from "@/app/actions";
+import { createProjectAction } from "@/app/actions";
 import { CANADIAN_TAX_RATES, PROVINCE_CODES, calculateDocumentTotals } from "@/lib/tax";
 import { centsToDecimalString, formatCAD, lineNet, toCents } from "@/lib/money";
 import {
@@ -22,6 +22,15 @@ interface CustomerRow {
   province: string;
   taxExempt: boolean;
 }
+
+type Line = {
+  description: string;
+  quantity: string;
+  unitPriceDollars: string;
+  taxExempt: boolean;
+  groupName?: string;
+  hiddenFromCustomer?: boolean;
+};
 
 const DEFAULT_SAMPLE_DESC =
   "Custom Printed 3M IJ35C Vinyl Graphics — Laminated & Installed";
@@ -63,7 +72,8 @@ export function QuoteBuilderForm({
     new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)
   );
 
-  const [lines, setLines] = useState([
+  const sendIntent = useRef(false);
+  const [lines, setLines] = useState<Line[]>([
     {
       description: DEFAULT_SAMPLE_DESC,
       quantity: "1",
@@ -142,12 +152,7 @@ export function QuoteBuilderForm({
     }
   }
 
-  function appendOrReplaceSampleLine(newLine: {
-    description: string;
-    quantity: string;
-    unitPriceDollars: string;
-    taxExempt: boolean;
-  }) {
+  function appendOrReplaceSampleLine(newLine: Line) {
     setLines((prev) => {
       if (
         prev.length === 1 &&
@@ -198,7 +203,8 @@ export function QuoteBuilderForm({
         e.preventDefault();
         setError(null);
         startTransition(async () => {
-          const res = await createQuoteAction({
+          const res = await createProjectAction({
+            sendNow: sendIntent.current,
             customerId,
             title,
             poReference,
@@ -212,7 +218,7 @@ export function QuoteBuilderForm({
           if (!res.ok) {
             setError(res.error);
           } else {
-            router.push(`/q/${res.publicToken}`);
+            router.push(`/projects/${res.projectId}`);
           }
         });
       }}
@@ -608,9 +614,42 @@ export function QuoteBuilderForm({
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 font-mono"
                   />
                 </div>
+                <div className="sm:col-span-12 sm:order-last flex flex-wrap items-center gap-4 text-xs text-slate-600">
+                  <label className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold">Group</span>
+                    <input
+                      type="text"
+                      aria-label={`Line ${index + 1} group`}
+                      value={line.groupName ?? ""}
+                      onChange={(e) => {
+                        const copy = [...lines];
+                        copy[index] = { ...line, groupName: e.target.value };
+                        setLines(copy);
+                      }}
+                      placeholder="e.g. Window film"
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 w-40"
+                    />
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(line.hiddenFromCustomer)}
+                      onChange={(e) => {
+                        const copy = [...lines];
+                        copy[index] = { ...line, hiddenFromCustomer: e.target.checked };
+                        setLines(copy);
+                      }}
+                    />
+                    Internal only (hidden from the customer, $0)
+                  </label>
+                </div>
                 <div className="sm:col-span-2 flex items-center justify-end gap-2">
-                  <span className="font-mono text-sm font-bold text-slate-900">
-                    {formatCAD(rowNetCents)}
+                  <span
+                    className={`font-mono text-sm font-bold ${
+                      line.hiddenFromCustomer ? "text-slate-400 line-through" : "text-slate-900"
+                    }`}
+                  >
+                    {line.hiddenFromCustomer ? formatCAD(0) : formatCAD(rowNetCents)}
                   </span>
                   {lines.length > 1 && (
                     <button
@@ -710,14 +749,27 @@ export function QuoteBuilderForm({
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="submit"
           disabled={isPending}
+          onClick={() => {
+            sendIntent.current = false;
+          }}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 font-semibold text-sm px-5 py-3 transition disabled:opacity-50 cursor-pointer"
+        >
+          {isPending && !sendIntent.current ? "Saving…" : "Save as draft"}
+        </button>
+        <button
+          type="submit"
+          disabled={isPending}
+          onClick={() => {
+            sendIntent.current = true;
+          }}
           className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition shadow-sm disabled:opacity-50 cursor-pointer"
         >
           <CheckCircle2 className="w-4 h-4 text-amber-400" />
-          {isPending ? "Creating Quote…" : "Create Quote & Open Customer Approval Link"}
+          {isPending && sendIntent.current ? "Saving…" : "Save & mark as sent to client"}
         </button>
       </div>
     </form>

@@ -18,7 +18,13 @@ describe("PostgreSQL schema & hard business constraints", () => {
     const equip = await db.select().from(schema.equipment);
 
     expect(customers.length).toBeGreaterThanOrEqual(6);
-    expect(jobs.map((j) => j.jobNumber)).toEqual(["232013", "232014", "232015"]);
+    // Signed projects carry the Sage numbers; unsigned quotes have no job number yet
+    expect(jobs.filter((j) => j.jobNumber).map((j) => j.jobNumber).sort()).toEqual([
+      "232013",
+      "232014",
+      "232015",
+    ]);
+    expect(jobs.filter((j) => !j.jobNumber).length).toBe(2);
     expect(equip.length).toBeGreaterThanOrEqual(6);
   });
 

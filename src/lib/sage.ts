@@ -443,7 +443,7 @@ export async function allocateSageInvoiceForJob(jobId: number): Promise<{
 
     await db.insert(activityLog).values({
       actorName: "Sage Accounting Sync",
-      entityType: "job",
+      entityType: "project",
       entityId: String(job.id),
       action: "sage.invoice_allocated",
       summary: `Sage assigned Invoice #${allocatedNum} -> Job #${allocatedNum} & Drive folder "Invoice ${allocatedNum}"`,
@@ -501,7 +501,7 @@ export async function voidSageInvoiceForJob(
 
     await db.insert(activityLog).values({
       actorName,
-      entityType: "job",
+      entityType: "project",
       entityId: String(jobId),
       action: "sage.invoice_voided",
       summary: `Job #${job.jobNumber ?? job.id} cancelled and Sage Invoice #${job.sageInvoiceNumber ?? "pending"} VOIDED (${cleanReason})`,
@@ -549,7 +549,7 @@ export async function sendJobInvoiceToCustomer(params: {
   await db.insert(activityLog).values({
     actorUserId: params.actorUserId ?? null,
     actorName: params.actorName,
-    entityType: "job",
+    entityType: "project",
     entityId: String(job.id),
     action: "invoice.sent",
     summary: `Sent Sage Invoice #${job.sageInvoiceNumber} to ${email}`,
