@@ -73,6 +73,50 @@ export const customers = pgTable(
   (t) => [uniqueIndex("customers_sage_id_idx").on(t.sageId)]
 );
 
+export type EquipmentStatus = "available" | "rented" | "maintenance" | "retired";
+
+export const equipment = pgTable(
+  "equipment",
+  {
+    id: serial("id").primaryKey(),
+    code: text("code").notNull(), // e.g. MS-001
+    name: text("name").notNull(),
+    category: text("category").notNull().default("Mobile Sign"),
+    serialNumber: text("serial_number").default(""),
+    defaultMonthlyRateCents: integer("default_monthly_rate_cents").notNull().default(15000),
+    status: text("status").$type<EquipmentStatus>().notNull().default("available"),
+    conditionNotes: text("condition_notes").default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("equipment_code_idx").on(t.code)]
+);
+export type Equipment = typeof equipment.$inferSelect;
+
+export type RentalStatus = "scheduled" | "active" | "returned" | "cancelled";
+
+export const equipmentRentals = pgTable("equipment_rentals", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id")
+    .notNull()
+    .references(() => equipment.id),
+  customerId: integer("customer_id")
+    .notNull()
+    .references(() => customers.id),
+  startDate: text("start_date").notNull(), // YYYY-MM-DD
+  endDate: text("end_date"), // YYYY-MM-DD (null = open-ended monthly rental)
+  returnedAt: timestamp("returned_at", { withTimezone: true }),
+  monthlyRateCents: integer("monthly_rate_cents").notNull().default(15000),
+  locationAddress: text("location_address").notNull().default(""),
+  lat: doublePrecision("lat"),
+  lng: doublePrecision("lng"),
+  status: text("status").$type<RentalStatus>().notNull().default("active"),
+  notes: text("notes").default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type EquipmentRental = typeof equipmentRentals.$inferSelect;
+
 /**
  * One record for the whole life of a piece of work (like Goodshuffle's Project):
  * New -> Quote Sent -> (Action Needed) -> Signed -> Scheduled -> In Progress ->
@@ -187,6 +231,9 @@ export const projectItems = pgTable("project_items", {
   /** Shown only on the internal work order / pull sheet, never to the customer. */
   hiddenFromCustomer: boolean("hidden_from_customer").notNull().default(false),
   calculatorMetaJson: text("calculator_meta_json"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  rentalStartDate: text("rental_start_date"),
+  rentalEndDate: text("rental_end_date"),
 });
 export const jobItems = projectItems;
 
@@ -238,48 +285,6 @@ export const projectFiles = pgTable("project_files", {
 });
 
 export const jobFiles = projectFiles;
-
-export type EquipmentStatus = "available" | "rented" | "maintenance" | "retired";
-
-export const equipment = pgTable(
-  "equipment",
-  {
-    id: serial("id").primaryKey(),
-    code: text("code").notNull(), // e.g. MS-001
-    name: text("name").notNull(),
-    category: text("category").notNull().default("Mobile Sign"),
-    serialNumber: text("serial_number").default(""),
-    defaultMonthlyRateCents: integer("default_monthly_rate_cents").notNull().default(15000),
-    status: text("status").$type<EquipmentStatus>().notNull().default("available"),
-    conditionNotes: text("condition_notes").default(""),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex("equipment_code_idx").on(t.code)]
-);
-
-export type RentalStatus = "scheduled" | "active" | "returned" | "cancelled";
-
-export const equipmentRentals = pgTable("equipment_rentals", {
-  id: serial("id").primaryKey(),
-  equipmentId: integer("equipment_id")
-    .notNull()
-    .references(() => equipment.id),
-  customerId: integer("customer_id")
-    .notNull()
-    .references(() => customers.id),
-  startDate: text("start_date").notNull(), // YYYY-MM-DD
-  endDate: text("end_date"), // YYYY-MM-DD (null = open-ended monthly rental)
-  returnedAt: timestamp("returned_at", { withTimezone: true }),
-  monthlyRateCents: integer("monthly_rate_cents").notNull().default(15000),
-  locationAddress: text("location_address").notNull().default(""),
-  lat: doublePrecision("lat"),
-  lng: doublePrecision("lng"),
-  status: text("status").$type<RentalStatus>().notNull().default("active"),
-  notes: text("notes").default(""),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
 
 export type BillingPlanStatus = "active" | "paused" | "ended";
 export type BillingPlanKind = "equipment_rental" | "maintenance" | "storage" | "advertising_space" | "service";

@@ -283,9 +283,19 @@ export default async function ProjectDetailPage(props: {
                                   <EyeOff className="w-3 h-3" /> Internal only
                                 </span>
                               )}
+                              {item.equipmentId && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-950 text-amber-300">
+                                  Fleet Equipment
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-slate-500">
                               Qty {item.quantity} × {formatCAD(item.unitPriceCents)}
+                              {item.rentalStartDate && (
+                                <span className="ml-2 font-mono text-slate-600">
+                                  • Rental: {item.rentalStartDate} → {item.rentalEndDate || "Ongoing Monthly"}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="font-bold text-slate-900 shrink-0">{formatCAD(item.netCents)}</div>
@@ -446,10 +456,22 @@ export default async function ProjectDetailPage(props: {
             <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
               {items.map((it) => (
                 <div key={it.id} className="p-3 text-xs flex justify-between gap-3">
-                  <span>
-                    • {it.description}
-                    {it.hiddenFromCustomer && <em className="text-slate-400"> (internal)</em>}
-                  </span>
+                  <div>
+                    <div className="font-semibold text-slate-900 flex flex-wrap items-center gap-1.5">
+                      <span>• {it.description}</span>
+                      {it.hiddenFromCustomer && <em className="text-slate-400 font-normal"> (internal)</em>}
+                      {it.equipmentId && (
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                          FLEET PULL
+                        </span>
+                      )}
+                    </div>
+                    {it.rentalStartDate && (
+                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        Dispatch Window: {it.rentalStartDate} → {it.rentalEndDate || "Ongoing Monthly"}
+                      </div>
+                    )}
+                  </div>
                   <strong className="whitespace-nowrap">Qty {it.quantity}</strong>
                 </div>
               ))}

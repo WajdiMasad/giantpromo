@@ -22,6 +22,12 @@ import {
 import { createSessionForUser, getCurrentUser } from "@/lib/auth";
 import { toCents } from "@/lib/money";
 import {
+  checkEquipmentConflict,
+  getFleetAvailability,
+  type AvailabilityResult,
+  type FleetUnitWithAvailability,
+} from "@/lib/availability";
+import {
   captureBatch,
   recordInvoicePayment,
   sendJobInvoiceToCustomer,
@@ -63,6 +69,9 @@ export async function createProjectAction(input: {
     taxExempt?: boolean;
     groupName?: string;
     hiddenFromCustomer?: boolean;
+    equipmentId?: number;
+    rentalStartDate?: string;
+    rentalEndDate?: string;
   }[];
 }) {
   try {
@@ -76,6 +85,9 @@ export async function createProjectAction(input: {
         taxExempt: Boolean(l.taxExempt),
         groupName: (l.groupName ?? "").trim(),
         hiddenFromCustomer: Boolean(l.hiddenFromCustomer),
+        equipmentId: l.equipmentId ?? null,
+        rentalStartDate: l.rentalStartDate ?? null,
+        rentalEndDate: l.rentalEndDate ?? null,
       }));
 
     const project = await createProjectWorkflow({
@@ -104,6 +116,25 @@ export async function createProjectAction(input: {
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
   }
+}
+
+export async function checkEquipmentAvailabilityAction(params: {
+  equipmentId: number;
+  startDate: string;
+  endDate?: string | null;
+  excludeProjectId?: number;
+}): Promise<AvailabilityResult> {
+  const db = await getDb();
+  return checkEquipmentConflict(db, params);
+}
+
+export async function getFleetAvailabilityAction(params: {
+  startDate: string;
+  endDate?: string | null;
+  excludeProjectId?: number;
+}): Promise<FleetUnitWithAvailability[]> {
+  const db = await getDb();
+  return getFleetAvailability(db, params);
 }
 
 export async function sendQuoteToClientAction(projectId: number) {

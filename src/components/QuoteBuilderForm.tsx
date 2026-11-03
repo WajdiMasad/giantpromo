@@ -1,9 +1,25 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useTransition } from "react";
+import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Calculator, Plus, Trash2, CheckCircle2, Sparkles } from "lucide-react";
-import { createProjectAction } from "@/app/actions";
+import {
+  AlertTriangle,
+  Calendar,
+  Calculator,
+  CheckCircle2,
+  Clock,
+  Plus,
+  RefreshCw,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+  Truck,
+} from "lucide-react";
+import {
+  createProjectAction,
+  getFleetAvailabilityAction,
+} from "@/app/actions";
+import type { FleetUnitWithAvailability } from "@/lib/availability";
 import { CANADIAN_TAX_RATES, PROVINCE_CODES, calculateDocumentTotals } from "@/lib/tax";
 import { centsToDecimalString, formatCAD, lineNet, toCents } from "@/lib/money";
 import {
@@ -30,6 +46,11 @@ type Line = {
   taxExempt: boolean;
   groupName?: string;
   hiddenFromCustomer?: boolean;
+  equipmentId?: number;
+  rentalStartDate?: string;
+  rentalEndDate?: string;
+  availabilityStatus?: "available" | "potential_conflict" | "hard_conflict" | "maintenance" | "retired";
+  availabilitySummary?: string;
 };
 
 const DEFAULT_SAMPLE_DESC =
@@ -93,6 +114,57 @@ export function QuoteBuilderForm({
   const [calcLaminate, setCalcLaminate] = useState(true);
   const [calcGrommets, setCalcGrommets] = useState(false);
   const [calcFeedback, setCalcFeedback] = useState<string | null>(null);
+
+  // Equipment Fleet & Live Availability Drawer (Goodshuffle Pro-style)
+  const [showFleet, setShowFleet] = useState(false);
+  const [fleetLoading, setFleetLoading] = useState(false);
+  const [fleetUnits, setFleetUnits] = useState<FleetUnitWithAvailability[]>([]);
+  const [fleetCategory, setFleetCategory] = useState("all");
+  const [fleetStartDate, setFleetStartDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [fleetEndDate, setFleetEndDate] = useState(
+    new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)
+  );
+  const [isOngoingRental, setIsOngoingRental] = useState(false);
+
+  useEffect(() => {
+    if (!showFleet) return;
+    let active = true;
+    setFleetLoading(true);
+    getFleetAvailabilityAction({
+      startDate: fleetStartDate,
+      endDate: isOngoingRental ? null : fleetEndDate,
+    })
+      .then((units) => {
+        if (active) setFleetUnits(units);
+      })
+      .catch((err) => console.error("Fleet fetch error:", err))
+      .finally(() => {
+        if (active) setFleetLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [showFleet, fleetStartDate, fleetEndDate, isOngoingRental]);
+
+  function addEquipmentLine(unit: FleetUnitWithAvailability) {
+    const s = fleetStartDate;
+    const e = isOngoingRental ? null : fleetEndDate;
+    const dateLabel = isOngoingRental ? `${s} → Ongoing Monthly` : `${s} → ${e}`;
+    appendOrReplaceSampleLine({
+      description: `${unit.equipment.code} — ${unit.equipment.name} (${dateLabel})`,
+      quantity: "1",
+      unitPriceDollars: centsToDecimalString(unit.equipment.defaultMonthlyRateCents),
+      taxExempt: false,
+      groupName: "Equipment Rentals",
+      equipmentId: unit.equipment.id,
+      rentalStartDate: s,
+      rentalEndDate: e || undefined,
+      availabilityStatus: unit.availability.status,
+      availabilitySummary: unit.availability.summary,
+    });
+  }
 
   const [error, setError] = useState<string | null>(null);
 
@@ -353,7 +425,21 @@ export function QuoteBuilderForm({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowCalc((v) => !v)}
+              onClick={() => {
+                setShowFleet((v) => !v);
+                if (showCalc) setShowCalc(false);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-300 font-semibold text-xs px-3.5 py-2 transition cursor-pointer"
+            >
+              <Truck className="w-3.5 h-3.5 text-amber-400" />
+              {showFleet ? "Hide Fleet Selector" : "Fleet Rentals & Live Availability"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCalc((v) => !v);
+                if (showFleet) setShowFleet(false);
+              }}
               className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-xs px-3.5 py-2 transition cursor-pointer"
             >
               <Calculator className="w-3.5 h-3.5 text-amber-600" />
@@ -378,6 +464,179 @@ export function QuoteBuilderForm({
             </button>
           </div>
         </div>
+
+        {/* Goodshuffle Pro-style Equipment Fleet & Real-Time Availability Drawer */}
+        {showFleet && (
+          <div className="rounded-2xl bg-slate-950 text-white p-5 space-y-4 border border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-bold text-amber-400">
+                  <Truck className="w-4 h-4 text-amber-400" />
+                  Live Fleet Availability Engine (Halifax Depot • 3797 Mackintosh St)
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Real-time double-booking protection & potential conflict tracking across draft quotes and active leases
+                </p>
+              </div>
+
+              {/* Date Interval Controls */}
+              <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <label htmlFor="fleet-start-date" className="text-xs text-slate-300 font-medium">
+                    Start:
+                  </label>
+                  <input
+                    id="fleet-start-date"
+                    type="date"
+                    value={fleetStartDate}
+                    onChange={(e) => setFleetStartDate(e.target.value)}
+                    className="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-xs text-white"
+                  />
+                </div>
+
+                {!isOngoingRental && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="fleet-end-date" className="text-xs text-slate-300 font-medium">
+                      End:
+                    </label>
+                    <input
+                      id="fleet-end-date"
+                      type="date"
+                      value={fleetEndDate}
+                      onChange={(e) => setFleetEndDate(e.target.value)}
+                      className="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+                )}
+
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isOngoingRental}
+                    onChange={(e) => setIsOngoingRental(e.target.checked)}
+                    className="rounded border-slate-700"
+                  />
+                  Ongoing Monthly
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    let active = true;
+                    setFleetLoading(true);
+                    getFleetAvailabilityAction({
+                      startDate: fleetStartDate,
+                      endDate: isOngoingRental ? null : fleetEndDate,
+                    })
+                      .then((units) => {
+                        if (active) setFleetUnits(units);
+                      })
+                      .finally(() => {
+                        if (active) setFleetLoading(false);
+                      });
+                  }}
+                  title="Refresh availability"
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${fleetLoading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Fleet Items Grid */}
+            {fleetLoading && fleetUnits.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-400">
+                Checking availability across active leases and draft quotes…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {fleetUnits.map((u) => {
+                  const status = u.availability.status;
+                  const isAvail = status === "available";
+                  const isHardConflict = status === "hard_conflict";
+                  const isPotConflict = status === "potential_conflict";
+                  const isMaint = status === "maintenance" || status === "retired";
+
+                  return (
+                    <div
+                      key={u.equipment.id}
+                      className="rounded-xl bg-slate-900 border border-slate-800 p-3.5 flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-slate-950 text-amber-400 border border-slate-800">
+                            {u.equipment.code}
+                          </span>
+                          {/* Live Status Badge */}
+                          {isAvail && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800">
+                              <CheckCircle2 className="w-3 h-3" /> Available
+                            </span>
+                          )}
+                          {isPotConflict && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-950/70 px-2 py-0.5 rounded-full border border-amber-700">
+                              <AlertTriangle className="w-3 h-3" /> Potential Conflict
+                            </span>
+                          )}
+                          {isHardConflict && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-800">
+                              <ShieldAlert className="w-3 h-3" /> Booked
+                            </span>
+                          )}
+                          {isMaint && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+                              <Clock className="w-3 h-3" /> Maintenance
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="font-semibold text-sm text-white">
+                          {u.equipment.name}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {u.equipment.conditionNotes}
+                        </div>
+                      </div>
+
+                      {/* Conflict Details Banner */}
+                      {!isAvail && (
+                        <div
+                          className={`rounded-lg px-2.5 py-1.5 text-[11px] leading-tight ${
+                            isHardConflict
+                              ? "bg-rose-950/60 text-rose-200 border border-rose-900/60"
+                              : isPotConflict
+                              ? "bg-amber-950/60 text-amber-200 border border-amber-900/60"
+                              : "bg-slate-800 text-slate-300 border border-slate-700"
+                          }`}
+                        >
+                          {u.availability.summary}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                        <div className="text-xs">
+                          <span className="font-bold text-white">
+                            {formatCAD(u.equipment.defaultMonthlyRateCents)}
+                          </span>
+                          <span className="text-slate-400 text-[11px]">/month</span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isMaint}
+                          onClick={() => addEquipmentLine(u)}
+                          className="rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 transition cursor-pointer"
+                        >
+                          + Add to Quote
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Optional Integrated Pricing Calculator */}
         {showCalc && (
@@ -569,7 +828,7 @@ export function QuoteBuilderForm({
                 key={index}
                 className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center bg-slate-50/70 p-3 rounded-xl border border-slate-200/80"
               >
-                <div className="sm:col-span-6">
+                <div className="sm:col-span-6 space-y-1.5">
                   <input
                     type="text"
                     required
@@ -583,6 +842,39 @@ export function QuoteBuilderForm({
                     placeholder="Description (e.g. 4ft x 8ft Alupanel Sign Face + Installation)"
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   />
+                  {line.equipmentId && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {line.availabilityStatus === "available" && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                          Available in Yard
+                        </span>
+                      )}
+                      {line.availabilityStatus === "potential_conflict" && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
+                          <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                          Potential Conflict
+                        </span>
+                      )}
+                      {line.availabilityStatus === "hard_conflict" && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-300">
+                          <ShieldAlert className="w-3 h-3 text-rose-600 shrink-0" />
+                          Hard Conflict (Booked)
+                        </span>
+                      )}
+                      {line.availabilityStatus === "maintenance" && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                          <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                          In Maintenance
+                        </span>
+                      )}
+                      {line.availabilitySummary && (
+                        <span className="text-[11px] text-slate-600 truncate max-w-sm" title={line.availabilitySummary}>
+                          • {line.availabilitySummary}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <input
@@ -748,6 +1040,32 @@ export function QuoteBuilderForm({
           </div>
         </div>
       </div>
+
+      {/* Conflict Notices */}
+      {lines.some((l) => l.availabilityStatus === "hard_conflict") && (
+        <div className="rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 p-4 text-xs sm:text-sm font-semibold flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="font-bold text-rose-950">Fleet Schedule Conflict Detected</div>
+            <p className="text-rose-800 text-xs">
+              One or more selected equipment items have overlapping bookings on active jobs. You can still save or present this quote as an estimate, but physical unit dispatch requires resolving the schedule conflict or selecting an alternative unit.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {lines.some((l) => l.availabilityStatus === "potential_conflict") &&
+        !lines.some((l) => l.availabilityStatus === "hard_conflict") && (
+          <div className="rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 p-4 text-xs sm:text-sm font-semibold flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-bold text-amber-950">Potential Fleet Conflict (Tentative Quote)</div>
+              <p className="text-amber-800 text-xs">
+                One or more selected equipment items are currently held on another open quote awaiting customer approval. The unit will be awarded to whichever customer signs first.
+              </p>
+            </div>
+          </div>
+        )}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         <button

@@ -103,48 +103,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS projects_public_token_idx ON projects (public_
 CREATE UNIQUE INDEX IF NOT EXISTS projects_job_number_idx ON projects (job_number);
 CREATE UNIQUE INDEX IF NOT EXISTS projects_idempotency_key_idx ON projects (idempotency_key);
 
-CREATE TABLE IF NOT EXISTS project_items (
-  id SERIAL PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  group_name TEXT NOT NULL DEFAULT '',
-  description TEXT NOT NULL,
-  quantity TEXT NOT NULL DEFAULT '1',
-  unit_price_cents INTEGER NOT NULL DEFAULT 0,
-  net_cents INTEGER NOT NULL DEFAULT 0,
-  tax_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents INTEGER NOT NULL DEFAULT 0,
-  tax_exempt BOOLEAN NOT NULL DEFAULT FALSE,
-  hidden_from_customer BOOLEAN NOT NULL DEFAULT FALSE,
-  calculator_meta_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS project_assignments (
-  id SERIAL PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS project_assignments_unique_idx ON project_assignments (project_id, user_id);
-
-CREATE TABLE IF NOT EXISTS project_files (
-  id SERIAL PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  uploaded_by_user_id INTEGER REFERENCES users(id),
-  uploaded_by_name TEXT NOT NULL DEFAULT 'Staff',
-  kind TEXT NOT NULL DEFAULT 'install_photo',
-  filename TEXT NOT NULL,
-  original_name TEXT NOT NULL,
-  mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
-  size_bytes INTEGER NOT NULL DEFAULT 0,
-  storage_path TEXT NOT NULL,
-  caption TEXT DEFAULT '',
-  drive_file_id TEXT,
-  drive_url TEXT,
-  drive_mirror_status TEXT NOT NULL DEFAULT 'pending',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS equipment (
   id SERIAL PRIMARY KEY,
   code TEXT NOT NULL,
@@ -174,6 +132,54 @@ CREATE TABLE IF NOT EXISTS equipment_rentals (
   notes TEXT DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_items (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  group_name TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL,
+  quantity TEXT NOT NULL DEFAULT '1',
+  unit_price_cents INTEGER NOT NULL DEFAULT 0,
+  net_cents INTEGER NOT NULL DEFAULT 0,
+  tax_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents INTEGER NOT NULL DEFAULT 0,
+  tax_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+  hidden_from_customer BOOLEAN NOT NULL DEFAULT FALSE,
+  calculator_meta_json TEXT,
+  equipment_id INTEGER REFERENCES equipment(id),
+  rental_start_date TEXT,
+  rental_end_date TEXT
+);
+ALTER TABLE project_items ADD COLUMN IF NOT EXISTS equipment_id INTEGER REFERENCES equipment(id);
+ALTER TABLE project_items ADD COLUMN IF NOT EXISTS rental_start_date TEXT;
+ALTER TABLE project_items ADD COLUMN IF NOT EXISTS rental_end_date TEXT;
+
+CREATE TABLE IF NOT EXISTS project_assignments (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS project_assignments_unique_idx ON project_assignments (project_id, user_id);
+
+CREATE TABLE IF NOT EXISTS project_files (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  uploaded_by_user_id INTEGER REFERENCES users(id),
+  uploaded_by_name TEXT NOT NULL DEFAULT 'Staff',
+  kind TEXT NOT NULL DEFAULT 'install_photo',
+  filename TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  storage_path TEXT NOT NULL,
+  caption TEXT DEFAULT '',
+  drive_file_id TEXT,
+  drive_url TEXT,
+  drive_mirror_status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Database-level double-booking guard on equipment_rentals:

@@ -39,6 +39,9 @@ export type ProjectLineInput = PricedLineInput & {
   groupName?: string;
   /** Internal-only line (pull sheet / work order). Forced to $0 and hidden from the customer. */
   hiddenFromCustomer?: boolean;
+  equipmentId?: number | null;
+  rentalStartDate?: string | null;
+  rentalEndDate?: string | null;
 };
 
 /** Statuses from which a customer (or staff) may still approve or decline. */
@@ -132,6 +135,9 @@ export async function createProjectWorkflow(params: {
       totalCents: line.totalCents,
       taxExempt: line.taxExempt,
       hiddenFromCustomer: Boolean(params.lines[idx]?.hiddenFromCustomer),
+      equipmentId: params.lines[idx]?.equipmentId ?? null,
+      rentalStartDate: params.lines[idx]?.rentalStartDate ?? null,
+      rentalEndDate: params.lines[idx]?.rentalEndDate ?? null,
     }))
   );
 
@@ -365,6 +371,43 @@ export async function approveProjectWorkflow(params: {
     action: "project.signed",
     summary: `${project.quoteNumber} signed by ${signer} -> Job #${finalProject?.jobNumber}`,
   });
+
+  // Automatically book physical fleet units and create recurring plans for any equipment rental line items
+  const items = await db
+    .select()
+    .from(projectItems)
+    .where(eq(projectItems.jobId, project.id));
+
+  for (const it of items) {
+    if (it.equipmentId) {
+      const sDate =
+        it.rentalStartDate ||
+        finalProject?.scheduledDate ||
+        new Date().toISOString().slice(0, 10);
+      try {
+        await bookEquipmentRentalWorkflow({
+          equipmentId: it.equipmentId,
+          customerId: finalProject!.customerId,
+          startDate: sDate,
+          endDate: it.rentalEndDate || undefined,
+          monthlyRateCents: it.unitPriceCents > 0 ? it.unitPriceCents : 175_00,
+          locationAddress: finalProject!.siteAddress || "Client Site",
+          poReference: finalProject!.poReference || undefined,
+          notes: `Auto-booked via signed Job #${finalProject!.jobNumber}`,
+          actorName: signer,
+        });
+      } catch (err) {
+        // If conflict or already booked, record warning in activity log but don't abort quote signing
+        await db.insert(activityLog).values({
+          actorName: "System",
+          entityType: "project",
+          entityId: String(project.id),
+          action: "project.equipment_booking_warning",
+          summary: `Could not auto-book equipment #${it.equipmentId}: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+  }
 
   return { project: finalProject! };
 }
