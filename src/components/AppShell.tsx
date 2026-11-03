@@ -10,23 +10,17 @@ import {
   Repeat,
   Users,
   HardHat,
-  CheckCircle2,
-  AlertTriangle,
   Sparkles,
   Plus,
+  Receipt,
 } from "lucide-react";
-import { switchActiveUserAction, toggleSageConnectionSimulationAction } from "@/app/actions";
+import { switchActiveUserAction } from "@/app/actions";
 import type { SessionUser } from "@/lib/auth";
 
 interface AppShellProps {
   currentUser: SessionUser;
   allUsers: { id: number; name: string; email: string; role: string }[];
-  sageState: {
-    environment: string;
-    businessName: string | null;
-    nextNumberPreview: number;
-    lastSyncStatus: string;
-  };
+  nextInvoiceNumber: number;
   readyToSendCount: number;
   children: React.ReactNode;
 }
@@ -34,7 +28,7 @@ interface AppShellProps {
 export function AppShell({
   currentUser,
   allUsers,
-  sageState,
+  nextInvoiceNumber,
   readyToSendCount,
   children,
 }: AppShellProps) {
@@ -51,7 +45,7 @@ export function AppShell({
       label: "Dashboard",
       shortLabel: "Home",
       icon: LayoutDashboard,
-      roles: ["admin", "office"],
+      roles: ["admin", "office", "accountant"],
     },
     {
       href: "/projects",
@@ -59,7 +53,7 @@ export function AppShell({
       shortLabel: "Projects",
       icon: Briefcase,
       badge: readyToSendCount > 0 ? `${readyToSendCount} to invoice` : undefined,
-      roles: ["admin", "office"],
+      roles: ["admin", "office", "accountant"],
     },
     {
       href: "/installer",
@@ -80,18 +74,23 @@ export function AppShell({
       label: "Recurring Billing",
       shortLabel: "Billing",
       icon: Repeat,
-      roles: ["admin", "office"],
+      roles: ["admin", "office", "accountant"],
+    },
+    {
+      href: "/accounting",
+      label: "Accounting",
+      shortLabel: "Books",
+      icon: Receipt,
+      roles: ["admin", "accountant"],
     },
     {
       href: "/customers",
-      label: "Customers (Sage)",
+      label: "Customers",
       shortLabel: "Clients",
       icon: Users,
-      roles: ["admin", "office"],
+      roles: ["admin", "office", "accountant"],
     },
   ].filter((item) => item.roles.includes(currentUser.role));
-
-  const isConnected = sageState.lastSyncStatus === "connected";
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
@@ -155,57 +154,14 @@ export function AppShell({
           })}
         </nav>
 
-        {/* Sage Master Sequence Status Card */}
-        <div className="p-4 m-3 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Sage Master Number
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                isConnected
-                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                  : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-              }`}
-            >
-              {isConnected ? (
-                <>
-                  <CheckCircle2 className="w-3 h-3" /> Connected
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-3 h-3" /> Offline
-                </>
-              )}
-            </span>
+        {/* Next invoice number (the app owns numbering) */}
+        <div className="p-4 m-3 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Next invoice / job #
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-xs text-slate-400">Next Invoice / Job #</span>
-            <span className="font-mono text-lg font-bold text-white">
-              #{sageState.nextNumberPreview}
-            </span>
-          </div>
+          <div className="font-mono text-lg font-bold text-white">#{nextInvoiceNumber}</div>
           <div className="text-[11px] text-slate-400 leading-relaxed">
-            Mode:{" "}
-            <span className="text-amber-300 font-medium">
-              {sageState.environment === "sandbox" ? "Sage Test Business" : "Live Books"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
-            <form action={toggleSageConnectionSimulationAction}>
-              <button
-                type="submit"
-                className="text-[11px] font-medium text-slate-400 hover:text-slate-200 underline text-left"
-              >
-                {isConnected ? "Simulate outage" : "Reconnect Sage"}
-              </button>
-            </form>
-            <a
-              href="/api/sage/connect"
-              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300"
-            >
-              OAuth Sync ↗
-            </a>
+            Assigned the moment a quote is signed. Numbers never repeat or skip.
           </div>
         </div>
 
@@ -243,28 +199,6 @@ export function AppShell({
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-72 flex flex-col min-h-screen pb-20 lg:pb-0">
-        {/* Disconnected Sage Banner */}
-        {!isConnected && (
-          <div className="bg-rose-600 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>
-                <strong>Sage Accounting is unreachable.</strong> Approved quotes will wait in{" "}
-                <span className="underline">⏳ Waiting for Sage number</span> and never use a
-                made-up number.
-              </span>
-            </div>
-            <form action={toggleSageConnectionSimulationAction}>
-              <button
-                type="submit"
-                className="shrink-0 rounded-lg bg-white text-rose-700 font-semibold px-3 py-1 text-xs hover:bg-rose-50"
-              >
-                Reconnect Now
-              </button>
-            </form>
-          </div>
-        )}
-
         {/* Mobile Top Header */}
         <header className="lg:hidden bg-slate-950 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 sticky top-0 z-20">
           <div className="flex items-center gap-2.5">
@@ -274,7 +208,7 @@ export function AppShell({
             <div>
               <div className="font-bold text-sm leading-tight">Giant Promotions</div>
               <div className="text-[11px] text-slate-400">
-                Next Sage #{sageState.nextNumberPreview}
+                Next invoice #{nextInvoiceNumber}
               </div>
             </div>
           </div>

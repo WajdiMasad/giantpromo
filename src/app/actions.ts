@@ -14,19 +14,19 @@ import {
   jobs,
   recurringBillingBatchItems,
   recurringBillingPlans,
-  sageConnection,
-  sageInvoices,
   users,
   type JobFileKind,
+  type PaymentMethod,
   type JobStatus,
 } from "@/db/schema";
 import { createSessionForUser, getCurrentUser } from "@/lib/auth";
 import { toCents } from "@/lib/money";
 import {
-  allocateSageInvoiceForJob,
+  captureBatch,
+  recordInvoicePayment,
   sendJobInvoiceToCustomer,
-  voidSageInvoiceForJob,
-} from "@/lib/sage";
+  voidJobInvoice,
+} from "@/lib/invoicing";
 import {
   approveAndSendRecurringBatchWorkflow,
   approveProjectWorkflow,
@@ -253,69 +253,68 @@ export async function sendJobInvoiceAction(input: {
   }
 }
 
-export async function voidJobInSageAction(input: {
-  jobId: number;
-  reason: string;
-}) {
+export async function voidJobAction(input: { jobId: number; reason: string }) {
   try {
     const user = await getCurrentUser();
-    await voidSageInvoiceForJob(input.jobId, input.reason, user?.name ?? "Admin");
+    await voidJobInvoice(input.jobId, input.reason, user?.name ?? "Admin");
 
     revalidatePath("/");
     revalidatePath("/projects");
     revalidatePath(`/projects/${input.jobId}`);
+    revalidatePath("/accounting");
     return { ok: true as const };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
   }
 }
 
-export async function retrySageAllocationAction(jobId: number) {
-  try {
-    const res = await allocateSageInvoiceForJob(jobId);
-    revalidatePath("/");
-    revalidatePath("/projects");
-    revalidatePath(`/projects/${jobId}`);
-    return { ok: true as const, sageInvoiceNumber: res.sageInvoiceNumber };
-  } catch (err) {
-    return { ok: false as const, error: unwrapDbErrorMessage(err) };
-  }
-}
-
-export async function markSageInvoicePaidAction(sageInvoiceNumber: string) {
+export async function recordPaymentAction(input: {
+  invoiceId: number;
+  amountDollars: string;
+  receivedOn: string;
+  method: PaymentMethod;
+  reference: string;
+}) {
   try {
     const user = await getCurrentUser();
-    const db = await getDb();
-    await db
-      .update(sageInvoices)
-      .set({
-        status: "PAID",
-        outstandingCents: 0,
-        updatedAt: new Date(),
-      })
-      .where(eq(sageInvoices.invoiceNumber, sageInvoiceNumber));
-
-    await db
-      .update(jobs)
-      .set({
-        status: "paid",
-        sagePaymentStatus: "PAID",
-        updatedAt: new Date(),
-      })
-      .where(eq(jobs.sageInvoiceNumber, sageInvoiceNumber));
-
-    await db.insert(activityLog).values({
-      actorUserId: user?.id ?? null,
-      actorName: user?.name ?? "Sage Sync",
-      entityType: "sage",
-      entityId: sageInvoiceNumber,
-      action: "sage.invoice_paid",
-      summary: `Sage Invoice #${sageInvoiceNumber} marked PAID in full`,
+    if (!user || !["admin", "office", "accountant"].includes(user.role)) {
+      throw new Error("You do not have permission to record payments.");
+    }
+    await recordInvoicePayment({
+      invoiceId: input.invoiceId,
+      amountCents: toCents(input.amountDollars || "0"),
+      receivedOn: input.receivedOn,
+      method: input.method,
+      reference: input.reference,
+      actorUserId: user.id,
+      actorName: user.name,
     });
 
     revalidatePath("/");
     revalidatePath("/projects");
+    revalidatePath("/accounting");
     return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: unwrapDbErrorMessage(err) };
+  }
+}
+
+/** The accountant confirms everything through a date has been entered into the books. */
+export async function captureAccountingBatchAction(input: { throughDate: string; note: string }) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || !["admin", "accountant"].includes(user.role)) {
+      throw new Error("Only the accountant or an admin can capture sales.");
+    }
+    const batch = await captureBatch({
+      throughDate: input.throughDate,
+      note: input.note,
+      actorUserId: user.id,
+      actorName: user.name,
+    });
+    revalidatePath("/accounting");
+    revalidatePath("/");
+    return { ok: true as const, batchId: batch.id };
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
   }
@@ -599,11 +598,9 @@ export async function createCustomerAction(input: {
 }) {
   try {
     const db = await getDb();
-    const sageId = `sage-cust-${Date.now()}`;
     const [created] = await db
       .insert(customers)
       .values({
-        sageId,
         name: input.name.trim(),
         companyName: input.companyName.trim() || input.name.trim(),
         contactPerson: input.contactPerson.trim(),
@@ -616,7 +613,6 @@ export async function createCustomerAction(input: {
         siteNotes: input.siteNotes.trim(),
         lat: 44.665,
         lng: -63.61,
-        syncedAt: new Date(),
       })
       .returning();
 
@@ -627,26 +623,4 @@ export async function createCustomerAction(input: {
   } catch (err) {
     return { ok: false as const, error: unwrapDbErrorMessage(err) };
   }
-}
-
-export async function toggleSageConnectionSimulationAction() {
-  const db = await getDb();
-  const [conn] = await db
-    .select()
-    .from(sageConnection)
-    .where(eq(sageConnection.id, "primary"))
-    .limit(1);
-
-  if (conn) {
-    const nextStatus = conn.lastSyncStatus === "connected" ? "disconnected" : "connected";
-    await db
-      .update(sageConnection)
-      .set({
-        lastSyncStatus: nextStatus,
-        lastSyncAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(sageConnection.id, "primary"));
-  }
-  revalidatePath("/", "layout");
 }

@@ -89,11 +89,8 @@ CREATE TABLE IF NOT EXISTS projects (
   internal_notes TEXT DEFAULT '',
   drive_folder_id TEXT,
   drive_folder_url TEXT,
-  sage_invoice_id TEXT,
-  sage_invoice_number TEXT,
-  sage_sync_status TEXT NOT NULL DEFAULT 'not_started',
-  sage_sync_error TEXT,
-  sage_payment_status TEXT NOT NULL DEFAULT 'DRAFT',
+  invoice_id INTEGER,
+  payment_status TEXT NOT NULL DEFAULT 'unpaid',
   invoice_sent_at TIMESTAMPTZ,
   invoice_sent_by_user_id INTEGER REFERENCES users(id),
   invoice_sent_to_email TEXT,
@@ -267,45 +264,77 @@ CREATE TABLE IF NOT EXISTS recurring_billing_batch_items (
   is_half_month_prorated BOOLEAN NOT NULL DEFAULT FALSE,
   change_flag TEXT NOT NULL DEFAULT 'unchanged',
   skip_this_month BOOLEAN NOT NULL DEFAULT FALSE,
-  sage_invoice_id TEXT,
-  sage_invoice_number TEXT,
+  invoice_id INTEGER,
+  invoice_number TEXT,
   emailed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS batch_items_plan_month_unique_idx ON recurring_billing_batch_items (plan_id, month_key);
 CREATE UNIQUE INDEX IF NOT EXISTS batch_items_idempotency_idx ON recurring_billing_batch_items (idempotency_key);
 
-CREATE TABLE IF NOT EXISTS sage_invoices (
-  id SERIAL PRIMARY KEY,
-  sage_id TEXT NOT NULL,
-  invoice_number TEXT NOT NULL,
-  contact_name TEXT NOT NULL DEFAULT '',
-  contact_sage_id TEXT,
-  reference TEXT DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'UNPAID',
-  date TEXT NOT NULL,
-  due_date TEXT,
-  net_cents INTEGER NOT NULL DEFAULT 0,
-  tax_cents INTEGER NOT NULL DEFAULT 0,
-  total_cents INTEGER NOT NULL DEFAULT 0,
-  outstanding_cents INTEGER NOT NULL DEFAULT 0,
+CREATE TABLE IF NOT EXISTS app_settings (
+  id TEXT PRIMARY KEY,
+  next_invoice_number INTEGER NOT NULL DEFAULT 232016,
+  company_name TEXT NOT NULL DEFAULT 'Giant Promotions Limited',
+  hst_number TEXT NOT NULL DEFAULT '888811650 RT 0001',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS sage_invoices_sage_id_idx ON sage_invoices (sage_id);
 
-CREATE TABLE IF NOT EXISTS sage_connection (
-  id TEXT PRIMARY KEY,
-  environment TEXT NOT NULL DEFAULT 'sandbox',
-  business_name TEXT DEFAULT 'Giant Promotions Limited (Sage Sandbox)',
-  access_token TEXT,
-  refresh_token TEXT,
-  expires_at TIMESTAMPTZ,
-  resource_owner_id TEXT,
-  next_number_preview INTEGER NOT NULL DEFAULT 232016,
-  last_sync_at TIMESTAMPTZ,
-  last_sync_status TEXT NOT NULL DEFAULT 'connected',
-  last_sync_error TEXT,
+CREATE TABLE IF NOT EXISTS invoices (
+  id SERIAL PRIMARY KEY,
+  invoice_number TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'job',
+  project_id INTEGER REFERENCES projects(id),
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  reference TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  issue_date TEXT,
+  due_date TEXT,
+  subtotal_cents INTEGER NOT NULL DEFAULT 0,
+  tax_label TEXT NOT NULL DEFAULT '14% HST',
+  tax_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents INTEGER NOT NULL DEFAULT 0,
+  sent_at TIMESTAMPTZ,
+  sent_to_email TEXT,
+  sent_by_user_id INTEGER REFERENCES users(id),
+  voided_at TIMESTAMPTZ,
+  void_reason TEXT,
+  captured_batch_id INTEGER,
+  void_captured_batch_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_number_idx ON invoices (invoice_number);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id SERIAL PRIMARY KEY,
+  invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+  received_on TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  method TEXT NOT NULL DEFAULT 'etransfer',
+  reference TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  recorded_by_user_id INTEGER REFERENCES users(id),
+  recorded_by_name TEXT NOT NULL DEFAULT 'Staff',
+  captured_batch_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS accounting_batches (
+  id SERIAL PRIMARY KEY,
+  through_date TEXT NOT NULL,
+  captured_by_user_id INTEGER REFERENCES users(id),
+  captured_by_name TEXT NOT NULL DEFAULT 'Accountant',
+  note TEXT DEFAULT '',
+  invoice_count INTEGER NOT NULL DEFAULT 0,
+  void_count INTEGER NOT NULL DEFAULT 0,
+  payment_count INTEGER NOT NULL DEFAULT 0,
+  sales_net_cents INTEGER NOT NULL DEFAULT 0,
+  hst_cents INTEGER NOT NULL DEFAULT 0,
+  sales_total_cents INTEGER NOT NULL DEFAULT 0,
+  payments_cents INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS activity_log (

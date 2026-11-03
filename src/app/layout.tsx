@@ -4,7 +4,7 @@ import "./globals.css";
 import { getDb } from "@/db";
 import { jobs, users } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { getSageConnectionState } from "@/lib/sage";
+import { getNextInvoiceNumberPreview } from "@/lib/invoicing";
 import { AppShell } from "@/components/AppShell";
 import { eq, isNull, and } from "drizzle-orm";
 
@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Giant Promotions OS — Quotes, Jobs, Sage Invoicing & Rentals",
+  title: "Giant Promotions OS",
   description:
     "Halifax Sign & Equipment Rental Operating System for Giant Promotions Limited.",
 };
@@ -42,7 +42,7 @@ export default async function RootLayout({
     })
     .from(users);
 
-  const sageState = await getSageConnectionState();
+  const nextInvoiceNumber = await getNextInvoiceNumberPreview();
   const readyToSendJobs = await db
     .select({ id: jobs.id })
     .from(jobs)
@@ -62,12 +62,7 @@ export default async function RootLayout({
         <AppShell
           currentUser={fallbackUser}
           allUsers={allUsers}
-          sageState={{
-            environment: sageState.environment,
-            businessName: sageState.businessName,
-            nextNumberPreview: sageState.nextNumberPreview,
-            lastSyncStatus: sageState.lastSyncStatus,
-          }}
+          nextInvoiceNumber={nextInvoiceNumber}
           readyToSendCount={readyToSendJobs.length}
         >
           {children}

@@ -1,4 +1,4 @@
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
@@ -35,6 +35,12 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         role: "installer",
         phone: "902-455-0148",
       },
+      {
+        email: "bookkeeper@giantpro.com",
+        name: "Accountant",
+        role: "accountant",
+        phone: "902-456-6487",
+      },
     ])
     .returning();
 
@@ -42,22 +48,17 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
   const leadInstaller = insertedUsers[2]!;
   const fieldInstaller = insertedUsers[3]!;
 
-  // 2. Seed Sage Connection State (starts at 232015 as in live books -> next is 232016)
-  await db.insert(schema.sageConnection).values({
+  // 2. App settings: the app owns invoice numbering (last used in the old books was 232015 -> next is 232016)
+  await db.insert(schema.appSettings).values({
     id: "primary",
-    environment: "sandbox",
-    businessName: "Giant Promotions Limited (Sage Sandbox — Test Safe)",
-    nextNumberPreview: 232016,
-    lastSyncAt: new Date(),
-    lastSyncStatus: "connected",
+    nextInvoiceNumber: 232016,
   });
 
-  // 3. Seed Master Customers (synced with Sage Contact IDs + Halifax/Atlantic coordinates)
+  // 3. Seed Master Customers (Halifax/Atlantic coordinates)
   const insertedCustomers = await db
     .insert(schema.customers)
     .values([
       {
-        sageId: "sage-cust-101",
         name: "O'Regan's Automotive Group",
         companyName: "O'Regan's Automotive Group",
         contactPerson: "Mark O'Regan",
@@ -74,7 +75,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         syncedAt: new Date(),
       },
       {
-        sageId: "sage-cust-102",
         name: "Steele Auto Group",
         companyName: "Steele GMC Buick",
         contactPerson: "Chris Beaton",
@@ -91,7 +91,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         syncedAt: new Date(),
       },
       {
-        sageId: "sage-cust-103",
         name: "Halifax Chamber of Commerce",
         companyName: "Halifax Chamber of Commerce",
         contactPerson: "Sarah Johnson",
@@ -108,7 +107,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         syncedAt: new Date(),
       },
       {
-        sageId: "sage-cust-104",
         name: "RBC Royal Bank — Dartmouth Crossing",
         companyName: "RBC Atlantic",
         contactPerson: "David MacKay — RBC Facilities",
@@ -125,7 +123,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         syncedAt: new Date(),
       },
       {
-        sageId: "sage-cust-105",
         name: "Atlantic Superstore — Bedford Highway",
         companyName: "Loblaw Atlantic",
         contactPerson: "Store Operations",
@@ -142,7 +139,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         syncedAt: new Date(),
       },
       {
-        sageId: "sage-cust-106",
         name: "Moncton Honda Dealership",
         companyName: "Moncton Honda",
         contactPerson: "Jean LeBlanc",
@@ -204,10 +200,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         installerNotes: "Both vans parked in bay 4. Heated bay available.",
         driveFolderId: "drive-folder-232013",
         driveFolderUrl: "https://drive.google.com/drive/folders/232013",
-        sageInvoiceId: "sage-inv-232013",
-        sageInvoiceNumber: "232013",
-        sageSyncStatus: "synced",
-        sagePaymentStatus: "UNPAID",
       },
       {
         // In progress, rush
@@ -241,10 +233,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
         installerNotes: "Deliver & set up in main conference room before 3:00 PM.",
         driveFolderId: "drive-folder-232014",
         driveFolderUrl: "https://drive.google.com/drive/folders/232014",
-        sageInvoiceId: "sage-inv-232014",
-        sageInvoiceNumber: "232014",
-        sageSyncStatus: "synced",
-        sagePaymentStatus: "UNPAID",
       },
       {
         // Signed online, scheduled for tomorrow
@@ -282,10 +270,6 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
           "Bring 12ft step ladders and isopropyl prep kit. Ask for Mark at showroom desk.",
         driveFolderId: "drive-folder-232015",
         driveFolderUrl: "https://drive.google.com/drive/folders/232015",
-        sageInvoiceId: "sage-inv-232015",
-        sageInvoiceNumber: "232015",
-        sageSyncStatus: "synced",
-        sagePaymentStatus: "UNPAID",
       },
       {
         // Customer opened it but hasn't answered
@@ -441,91 +425,147 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
     { jobId: job3.id, userId: fieldInstaller.id },
   ]);
 
-  // 6. Seed Sage Invoices Cache (mirrors jobs + historical paid/overdue invoices for Dashboard)
-  await db.insert(schema.sageInvoices).values([
+  // 6. Seed invoices. Signed jobs have a draft invoice (number reserved, not sent yet).
+  //    Older history includes one past accountant batch so the capture screen has context.
+  const [batch1] = await db
+    .insert(schema.accountingBatches)
+    .values({
+      throughDate: "2026-10-31",
+      capturedByName: "Office & Accounting",
+      note: "Weekly capture",
+      invoiceCount: 2,
+      paymentCount: 1,
+      salesNetCents: 3200_00 + 1450_00,
+      hstCents: 448_00 + 203_00,
+      salesTotalCents: 3648_00 + 1653_00,
+      paymentsCents: 3648_00,
+    })
+    .returning();
+
+  const insertedInvoices = await db
+    .insert(schema.invoices)
+    .values([
+      {
+        invoiceNumber: "232010",
+        kind: "job",
+        customerId: superstore!.id,
+        reference: "PO-3398",
+        description: "Lot banners and window graphics",
+        status: "issued",
+        issueDate: "2026-10-12",
+        dueDate: "2026-11-11",
+        subtotalCents: 3200_00,
+        taxLabel: "14% HST",
+        taxCents: 448_00,
+        totalCents: 3648_00,
+        sentAt: new Date("2026-10-12T14:00:00Z"),
+        sentToEmail: "store0329@loblaw.ca",
+        capturedBatchId: batch1!.id,
+      },
+      {
+        invoiceNumber: "232011",
+        kind: "job",
+        customerId: oregans!.id,
+        reference: "PO-68990",
+        description: "Dealership pylon sign faces",
+        status: "issued",
+        issueDate: "2026-11-01",
+        dueDate: "2026-12-01",
+        subtotalCents: 4100_00,
+        taxLabel: "14% HST",
+        taxCents: 574_00,
+        totalCents: 4674_00,
+        sentAt: new Date("2026-11-01T14:00:00Z"),
+        sentToEmail: "marketing@oregans.com",
+      },
+      {
+        invoiceNumber: "232012",
+        kind: "job",
+        customerId: rbc!.id,
+        reference: "RBC-OCT-19",
+        description: "Branch window film",
+        status: "issued",
+        issueDate: "2026-09-18",
+        dueDate: "2026-10-18", // overdue
+        subtotalCents: 1450_00,
+        taxLabel: "14% HST",
+        taxCents: 203_00,
+        totalCents: 1653_00,
+        sentAt: new Date("2026-09-18T14:00:00Z"),
+        sentToEmail: "facilities.atlantic@rbc.com",
+        capturedBatchId: batch1!.id,
+      },
+      {
+        invoiceNumber: "232013",
+        kind: "job",
+        projectId: job1.id,
+        customerId: steele!.id,
+        reference: "PO-69157",
+        description: job1.title,
+        status: "draft",
+        subtotalCents: job1.subtotalCents,
+        taxLabel: job1.taxLabel,
+        taxCents: job1.taxCents,
+        totalCents: job1.totalCents,
+      },
+      {
+        invoiceNumber: "232014",
+        kind: "job",
+        projectId: job2.id,
+        customerId: chamber!.id,
+        reference: "HCC-2026-11",
+        description: job2.title,
+        status: "draft",
+        subtotalCents: job2.subtotalCents,
+        taxLabel: job2.taxLabel,
+        taxCents: job2.taxCents,
+        totalCents: job2.totalCents,
+      },
+      {
+        invoiceNumber: "232015",
+        kind: "job",
+        projectId: job3.id,
+        customerId: oregans!.id,
+        reference: "PO-69158",
+        description: job3.title,
+        status: "draft",
+        subtotalCents: job3.subtotalCents,
+        taxLabel: job3.taxLabel,
+        taxCents: job3.taxCents,
+        totalCents: job3.totalCents,
+      },
+    ] as (typeof schema.invoices.$inferInsert)[])
+    .returning();
+
+  const invByNumber = (n: string) => insertedInvoices.find((i) => i.invoiceNumber === n)!;
+  for (const [proj, num] of [
+    [job1, "232013"],
+    [job2, "232014"],
+    [job3, "232015"],
+  ] as const) {
+    await db
+      .update(schema.projects)
+      .set({ invoiceId: invByNumber(num).id })
+      .where(eq(schema.projects.id, proj.id));
+  }
+
+  await db.insert(schema.payments).values([
     {
-      sageId: "sage-inv-232010",
-      invoiceNumber: "232010",
-      contactName: "Atlantic Superstore — Bedford Highway",
-      contactSageId: "sage-cust-105",
-      reference: "PO-3398",
-      status: "PAID",
-      date: "2026-10-12",
-      dueDate: "2026-11-11",
-      netCents: 3200_00,
-      taxCents: 448_00,
-      totalCents: 3648_00,
-      outstandingCents: 0,
+      invoiceId: invByNumber("232010").id,
+      receivedOn: "2026-10-28",
+      amountCents: 3648_00,
+      method: "etransfer",
+      reference: "e-Transfer from Atlantic Superstore",
+      recordedByName: "Office & Accounting",
+      capturedBatchId: batch1!.id,
     },
     {
-      sageId: "sage-inv-232011",
-      invoiceNumber: "232011",
-      contactName: "O'Regan's Automotive Group",
-      contactSageId: "sage-cust-101",
-      reference: "PO-68990",
-      status: "PAID",
-      date: "2026-11-01",
-      dueDate: "2026-12-01",
-      netCents: 4100_00,
-      taxCents: 574_00,
-      totalCents: 4674_00,
-      outstandingCents: 0,
-    },
-    {
-      sageId: "sage-inv-232012",
-      invoiceNumber: "232012",
-      contactName: "RBC Royal Bank — Dartmouth Crossing",
-      contactSageId: "sage-cust-104",
-      reference: "RBC-OCT-19",
-      status: "UNPAID",
-      date: "2026-09-18",
-      dueDate: "2026-10-18", // Overdue!
-      netCents: 1450_00,
-      taxCents: 203_00,
-      totalCents: 1653_00,
-      outstandingCents: 1653_00,
-    },
-    {
-      sageId: "sage-inv-232013",
-      invoiceNumber: "232013",
-      contactName: "Steele Auto Group",
-      contactSageId: "sage-cust-102",
-      reference: "PO-69157",
-      status: "UNPAID",
-      date: today,
-      dueDate: "2026-12-02",
-      netCents: 2400_00,
-      taxCents: 336_00,
-      totalCents: 2736_00,
-      outstandingCents: 2736_00,
-    },
-    {
-      sageId: "sage-inv-232014",
-      invoiceNumber: "232014",
-      contactName: "Halifax Chamber of Commerce",
-      contactSageId: "sage-cust-103",
-      reference: "HCC-2026-11",
-      status: "UNPAID",
-      date: today,
-      dueDate: "2026-12-02",
-      netCents: 1650_00,
-      taxCents: 231_00,
-      totalCents: 1881_00,
-      outstandingCents: 1881_00,
-    },
-    {
-      sageId: "sage-inv-232015",
-      invoiceNumber: "232015",
-      contactName: "O'Regan's Automotive Group",
-      contactSageId: "sage-cust-101",
-      reference: "PO-69158",
-      status: "UNPAID",
-      date: today,
-      dueDate: "2026-12-02",
-      netCents: 1850_00,
-      taxCents: 259_00,
-      totalCents: 2109_00,
-      outstandingCents: 2109_00,
+      invoiceId: invByNumber("232011").id,
+      receivedOn: "2026-11-02",
+      amountCents: 4674_00,
+      method: "cheque",
+      reference: "Cheque #4471",
+      recordedByName: "Office & Accounting",
     },
   ]);
 
@@ -709,7 +749,7 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       entityType: "project",
       entityId: String(q1.id),
       action: "quote.approved",
-      summary: "Quote Q-1001 approved online -> Sage Invoice #232015 & Job #232015 created",
+      summary: "Q-1001 approved online -> Invoice / Job #232015 reserved",
     },
     {
       actorUserId: leadInstaller.id,

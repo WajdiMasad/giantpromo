@@ -5,7 +5,7 @@ import { getDb } from "@/db";
 import { customers, projects } from "@/db/schema";
 import { isSigned, isUnsignedQuote } from "@/lib/project-status";
 import { formatCAD } from "@/lib/money";
-import { getSageConnectionState } from "@/lib/sage";
+import { getNextInvoiceNumberPreview } from "@/lib/invoicing";
 import { DashboardInvoiceActions } from "@/components/DashboardInvoiceActions";
 import { CopyQuoteLinkButton } from "@/components/CopyQuoteLinkButton";
 
@@ -43,7 +43,7 @@ const JOB_STAGE_STYLE: Record<string, string> = {
 
 export default async function DashboardPage() {
   const db = await getDb();
-  const sageState = await getSageConnectionState();
+  const nextInvoiceNumber = await getNextInvoiceNumberPreview();
 
   const everything = await db
     .select({ project: projects, customer: customers })
@@ -131,7 +131,7 @@ export default async function DashboardPage() {
               month: "long",
               day: "numeric",
             })}{" "}
-            • Next Sage invoice #{sageState.nextNumberPreview}
+            • Next invoice #{nextInvoiceNumber}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -259,7 +259,7 @@ export default async function DashboardPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400 whitespace-nowrap">
-                      {job.jobNumber ? `#${job.jobNumber}` : "⏳ Waiting for Sage #"}
+                      {job.jobNumber ? `#${job.jobNumber}` : "Pending"}
                     </span>
                     {job.priority === "rush" && (
                       <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-rose-600 text-white">

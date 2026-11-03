@@ -48,7 +48,7 @@ interface BatchItemRow {
   isHalfMonthProrated: boolean;
   changeFlag: string;
   skipThisMonth: boolean;
-  sageInvoiceNumber: string | null;
+  invoiceNumber: string | null;
 }
 
 interface BatchRow {
@@ -128,7 +128,7 @@ export function RecurringBillingClient({
               Monthly 1st-of-the-Month Batch Review
             </h2>
             <p className="text-xs text-slate-400 max-w-2xl">
-              Review all upcoming monthly invoices in one place. Approve early and schedule for the 1st (built for the Jan 1 New Year&apos;s Day holiday), or run the Dec 1 dry run to compare line-by-line with Sage.
+              Review all upcoming monthly invoices in one place. Approve early and schedule for the 1st (built for the Jan 1 New Year&apos;s Day holiday), or run a dry run first to preview the month.
             </p>
           </div>
 
@@ -194,11 +194,11 @@ export function RecurringBillingClient({
                   </span>
                   {batch.isDryRun ? (
                     <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200 whitespace-nowrap">
-                      Dry Run (Does Not Touch Live Sage Numbers)
+                      Preview only (uses no invoice numbers)
                     </span>
                   ) : (
                     <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
-                      Live Sage Batch
+                      Live batch
                     </span>
                   )}
                   <span className="text-xs font-semibold uppercase text-slate-600 whitespace-nowrap">
@@ -255,7 +255,7 @@ export function RecurringBillingClient({
                           setFeedback(
                             batch.isDryRun
                               ? `Completed Dec 1 Dry Run (${res.processedCount} items verified).`
-                              : `Approved & sent ${res.processedCount} Sage invoices for ${batch.monthKey}!`
+                              : `Created ${res.processedCount} invoices for ${batch.monthKey}.`
                           );
                       });
                     }}
@@ -277,7 +277,7 @@ export function RecurringBillingClient({
                     <th className="py-3 px-4">Include</th>
                     <th className="py-3 px-4">Customer & Description</th>
                     <th className="py-3 px-4">Change / Proration Flag</th>
-                    <th className="py-3 px-4">Sage Invoice #</th>
+                    <th className="py-3 px-4">Invoice #</th>
                     <th className="py-3 px-4 text-right">Net</th>
                     <th className="py-3 px-4 text-right">Tax</th>
                     <th className="py-3 px-4 text-right">Total</th>
@@ -298,7 +298,7 @@ export function RecurringBillingClient({
                           type="checkbox"
                           aria-label={`Include ${item.customerName} in ${batch.monthKey} batch`}
                           checked={!item.skipThisMonth}
-                          disabled={isPending || Boolean(item.sageInvoiceNumber)}
+                          disabled={isPending || Boolean(item.invoiceNumber)}
                           onChange={(e) => {
                             startTransition(async () => {
                               await toggleSkipBatchItemAction({
@@ -336,9 +336,9 @@ export function RecurringBillingClient({
                         )}
                       </td>
                       <td className="py-3 px-4 font-mono text-xs font-bold whitespace-nowrap">
-                        {item.sageInvoiceNumber ? (
+                        {item.invoiceNumber ? (
                           <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-400">
-                            #{item.sageInvoiceNumber}
+                            #{item.invoiceNumber}
                           </span>
                         ) : (
                           <span className="text-slate-400">Pending Approval</span>

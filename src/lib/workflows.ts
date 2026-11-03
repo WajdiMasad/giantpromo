@@ -11,12 +11,10 @@ import {
   recurringBillingBatchItems,
   recurringBillingBatches,
   recurringBillingPlans,
-  sageConnection,
-  sageInvoices,
 } from "@/db/schema";
-import { calculateDocumentTotals, calculateTaxCents, type PricedLineInput } from "./tax";
+import { CANADIAN_TAX_RATES, calculateDocumentTotals, calculateTaxCents, type PricedLineInput } from "./tax";
 import { calculateInitialRecurringChargeCents } from "./pricing";
-import { allocateSageInvoiceForJob, withSageLock } from "./sage";
+import { assignJobNumberForProject, issueRecurringInvoice } from "./invoicing";
 
 export async function getNextQuoteNumber(): Promise<string> {
   const db = await getDb();
@@ -49,7 +47,7 @@ const OPEN_FOR_DECISION = ["new", "quote_sent", "action_needed"];
 /**
  * Create a Project. It starts as "New" (a draft) unless sendNow is set, in which case it is
  * marked "Quote Sent" immediately. The Q-number exists from creation; the job number (the
- * Sage invoice number) does NOT exist until the customer signs.
+ * invoice number) does NOT exist until the customer signs.
  */
 export async function createProjectWorkflow(params: {
   customerId: number;
@@ -300,7 +298,7 @@ export async function markProjectLostWorkflow(params: {
 
 /**
  * Customer or staff signs the project -> it becomes a scheduled job and immediately gets its
- * authoritative Sage invoice number (§2a). Same record, no copy. Idempotent.
+ * invoice number (§2a). Same record, no copy. Idempotent.
  */
 export async function approveProjectWorkflow(params: {
   projectIdOrToken: { projectId?: number; publicToken?: string };
@@ -322,7 +320,7 @@ export async function approveProjectWorkflow(params: {
   const [project] = await db.select().from(projects).where(whereClause).limit(1);
   if (!project) throw new Error("Quote not found");
 
-  // Idempotent: already signed -> return the same project (and its same Sage number)
+  // Idempotent: already signed -> return the same project (and its same invoice number)
   if (project.approvedAt) {
     return { project };
   }
@@ -345,19 +343,14 @@ export async function approveProjectWorkflow(params: {
       approvedByEmail: params.approvedByEmail?.trim() ?? null,
       approvedIp: params.approvedIp ?? null,
       scheduledDate: project.scheduledDate ?? defaultSchedule,
-      sageSyncStatus: "pending_number",
-      sagePaymentStatus: "UNPAID",
+      paymentStatus: "unpaid",
       declineReason: null,
       updatedAt: now,
     })
     .where(eq(projects.id, project.id));
 
-  // Immediately allocate authoritative Sage invoice number (232016+)
-  try {
-    await allocateSageInvoiceForJob(project.id);
-  } catch {
-    // If Sage is temporarily unreachable, the project stays in 'pending_number' as designed (§2a).
-  }
+  // Reserve the next invoice number (232016+) right now. It becomes the job number everywhere.
+  await assignJobNumberForProject(project.id);
 
   const [finalProject] = await db
     .select()
@@ -370,7 +363,7 @@ export async function approveProjectWorkflow(params: {
     entityType: "project",
     entityId: String(project.id),
     action: "project.signed",
-    summary: `${project.quoteNumber} signed by ${signer} -> Job #${finalProject?.jobNumber ?? "Pending Sage"}`,
+    summary: `${project.quoteNumber} signed by ${signer} -> Job #${finalProject?.jobNumber}`,
   });
 
   return { project: finalProject! };
@@ -623,8 +616,9 @@ export async function buildOrGetRecurringBatchWorkflow(params: {
 
 /**
  * Approve & Execute (or Schedule for the 1st) a monthly recurring billing batch (§2c).
- * - If isDryRun is true (e.g. Dec 1 parallel run), simulates without allocating real Sage numbers.
- * - If live (e.g. Jan 1), allocates official sequential Sage invoice numbers (232016+) for each non-skipped line.
+ * - Dry run: a preview only. No invoice numbers are used.
+ * - Live: creates one real invoice per non-skipped line, numbered from the app's own sequence,
+ *   issued on the batch date (the 1st). The accountant then picks them up at the next capture.
  */
 export async function approveAndSendRecurringBatchWorkflow(params: {
   batchId: number;
@@ -632,123 +626,34 @@ export async function approveAndSendRecurringBatchWorkflow(params: {
   actorUserId?: number;
   actorName: string;
 }) {
-  return withSageLock(async () => {
-    const db = await getDb();
-    const [batch] = await db
-      .select()
-      .from(recurringBillingBatches)
-      .where(eq(recurringBillingBatches.id, params.batchId))
-      .limit(1);
-    if (!batch) throw new Error("Billing batch not found");
+  const db = await getDb();
+  const [batch] = await db
+    .select()
+    .from(recurringBillingBatches)
+    .where(eq(recurringBillingBatches.id, params.batchId))
+    .limit(1);
+  if (!batch) throw new Error("Billing batch not found");
 
-    const items = await db
-      .select({
-        item: recurringBillingBatchItems,
-        plan: recurringBillingPlans,
-        customer: customers,
-      })
-      .from(recurringBillingBatchItems)
-      .innerJoin(
-        recurringBillingPlans,
-        eq(recurringBillingBatchItems.planId, recurringBillingPlans.id)
-      )
-      .innerJoin(customers, eq(recurringBillingPlans.customerId, customers.id))
-      .where(eq(recurringBillingBatchItems.batchId, batch.id));
+  const items = await db
+    .select({
+      item: recurringBillingBatchItems,
+      plan: recurringBillingPlans,
+      customer: customers,
+    })
+    .from(recurringBillingBatchItems)
+    .innerJoin(recurringBillingPlans, eq(recurringBillingBatchItems.planId, recurringBillingPlans.id))
+    .innerJoin(customers, eq(recurringBillingPlans.customerId, customers.id))
+    .where(eq(recurringBillingBatchItems.batchId, batch.id));
 
-    const now = new Date();
+  const now = new Date();
 
-    if (params.scheduleForFirst && !batch.isDryRun) {
-      await db
-        .update(recurringBillingBatches)
-        .set({
-          status: "approved_scheduled",
-          approvedByUserId: params.actorUserId ?? null,
-          approvedAt: now,
-        })
-        .where(eq(recurringBillingBatches.id, batch.id));
-
-      await db.insert(activityLog).values({
-        actorUserId: params.actorUserId ?? null,
-        actorName: params.actorName,
-        entityType: "billing",
-        entityId: String(batch.id),
-        action: "batch.scheduled",
-        summary: `Approved & scheduled ${batch.monthKey} recurring batch for ${batch.invoiceDate} (holiday-safe)`,
-      });
-      return { status: "approved_scheduled" as const, processedCount: items.length };
-    }
-
-    let processedCount = 0;
-    for (const { item, plan, customer } of items) {
-      if (item.skipThisMonth || item.sageInvoiceNumber) continue;
-
-      if (batch.isDryRun) {
-        await db
-          .update(recurringBillingBatchItems)
-          .set({
-            sageInvoiceId: `dryrun-${item.idempotencyKey}`,
-            sageInvoiceNumber: `DRY-${batch.monthKey}-${item.planId}`,
-          })
-          .where(eq(recurringBillingBatchItems.id, item.id));
-        processedCount++;
-        continue;
-      }
-
-      // Live batch: allocate official sequential Sage invoice number
-      const [conn] = await db
-        .select()
-        .from(sageConnection)
-        .where(eq(sageConnection.id, "primary"))
-        .limit(1);
-      const allocatedNum = String(conn?.nextNumberPreview ?? 232016);
-
-      await db
-        .update(sageConnection)
-        .set({
-          nextNumberPreview: sql`${sageConnection.nextNumberPreview} + 1`,
-          lastSyncAt: now,
-          updatedAt: now,
-        })
-        .where(eq(sageConnection.id, "primary"));
-
-      const sageId = `sage-inv-${item.idempotencyKey}`;
-      await db.insert(sageInvoices).values({
-        sageId,
-        invoiceNumber: allocatedNum,
-        contactName: customer.name,
-        contactSageId: customer.sageId,
-        reference: plan.poReference
-          ? `${plan.poReference} [${item.idempotencyKey}]`
-          : `[${item.idempotencyKey}]`,
-        status: "UNPAID",
-        date: batch.invoiceDate,
-        dueDate: `${batch.monthKey}-28`,
-        netCents: item.netCents,
-        taxCents: item.taxCents,
-        totalCents: item.totalCents,
-        outstandingCents: item.totalCents,
-      });
-
-      await db
-        .update(recurringBillingBatchItems)
-        .set({
-          sageInvoiceId: sageId,
-          sageInvoiceNumber: allocatedNum,
-          emailedAt: now,
-        })
-        .where(eq(recurringBillingBatchItems.id, item.id));
-
-      processedCount++;
-    }
-
-    const finalStatus = batch.isDryRun ? "dry_run" : "sent";
+  if (params.scheduleForFirst && !batch.isDryRun) {
     await db
       .update(recurringBillingBatches)
       .set({
-        status: finalStatus,
+        status: "approved_scheduled",
         approvedByUserId: params.actorUserId ?? null,
-        approvedAt: batch.approvedAt ?? now,
-        executedAt: now,
+        approvedAt: now,
       })
       .where(eq(recurringBillingBatches.id, batch.id));
 
@@ -757,12 +662,61 @@ export async function approveAndSendRecurringBatchWorkflow(params: {
       actorName: params.actorName,
       entityType: "billing",
       entityId: String(batch.id),
-      action: batch.isDryRun ? "batch.dry_run_completed" : "batch.sent",
-      summary: batch.isDryRun
-        ? `Completed ${batch.monthKey} dry-run comparison batch (${processedCount} items)`
-        : `Approved & sent ${batch.monthKey} recurring batch (${processedCount} Sage invoices created & emailed)`,
+      action: "batch.scheduled",
+      summary: `Approved & scheduled ${batch.monthKey} recurring batch for ${batch.invoiceDate} (holiday-safe)`,
     });
+    return { status: "approved_scheduled" as const, processedCount: items.length };
+  }
 
-    return { status: finalStatus, processedCount };
+  let processedCount = 0;
+  for (const { item, plan, customer } of items) {
+    if (item.skipThisMonth || item.invoiceNumber) continue;
+
+    if (batch.isDryRun) {
+      await db
+        .update(recurringBillingBatchItems)
+        .set({ invoiceNumber: `DRY-${batch.monthKey}-${item.planId}` })
+        .where(eq(recurringBillingBatchItems.id, item.id));
+      processedCount++;
+      continue;
+    }
+
+    const province = plan.province || customer.province || "NS";
+    await issueRecurringInvoice({
+      planCustomerId: customer.id,
+      batchItemId: item.id,
+      reference: plan.poReference ?? "",
+      description: item.description,
+      netCents: item.netCents,
+      taxCents: item.taxCents,
+      taxLabel: CANADIAN_TAX_RATES[province as keyof typeof CANADIAN_TAX_RATES]?.label ?? "HST",
+      issueDate: batch.invoiceDate,
+      customerTerms: customer.paymentTerms,
+    });
+    processedCount++;
+  }
+
+  const finalStatus = batch.isDryRun ? "dry_run" : "sent";
+  await db
+    .update(recurringBillingBatches)
+    .set({
+      status: finalStatus,
+      approvedByUserId: params.actorUserId ?? null,
+      approvedAt: batch.approvedAt ?? now,
+      executedAt: now,
+    })
+    .where(eq(recurringBillingBatches.id, batch.id));
+
+  await db.insert(activityLog).values({
+    actorUserId: params.actorUserId ?? null,
+    actorName: params.actorName,
+    entityType: "billing",
+    entityId: String(batch.id),
+    action: batch.isDryRun ? "batch.dry_run_completed" : "batch.sent",
+    summary: batch.isDryRun
+      ? `Previewed ${batch.monthKey} recurring batch (${processedCount} items)`
+      : `Approved & issued ${batch.monthKey} recurring batch (${processedCount} invoices created)`,
   });
+
+  return { status: finalStatus, processedCount };
 }

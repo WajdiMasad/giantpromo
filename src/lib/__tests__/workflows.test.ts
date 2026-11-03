@@ -15,16 +15,16 @@ import {
   createProjectWorkflow,
   returnEquipmentRentalWorkflow,
 } from "../workflows";
-import { sendJobInvoiceToCustomer, voidSageInvoiceForJob } from "../sage";
+import { sendJobInvoiceToCustomer, voidJobInvoice } from "../invoicing";
 
-describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows", () => {
+describe("End-to-end Project -> Invoice & Recurring Billing workflows", () => {
   beforeEach(async () => {
     resetDbForTests();
     const db = await getDb();
     await seedInitialDataIfEmpty(db);
   });
 
-  it("allocates Sage master number 232016 upon quote approval and is idempotent on retry", async () => {
+  it("assigns invoice/job number 232016 when the quote is signed and is idempotent on retry", async () => {
     const db = await getDb();
     const [customer] = await db.select().from(schema.customers).limit(1);
 
@@ -51,10 +51,17 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
       approvedByEmail: "marketing@oregans.com",
     });
 
-    // Seed had 232013, 232014, 232015 -> next Sage master number must be 232016!
+    // Seed had 232013, 232014, 232015 -> the app's next number is 232016
     expect(job.jobNumber).toBe("232016");
-    expect(job.sageInvoiceNumber).toBe("232016");
-    expect(job.sageSyncStatus).toBe("synced");
+    expect(job.invoiceId).not.toBeNull();
+    const dbx = await getDb();
+    const [draftInvoice] = await dbx
+      .select()
+      .from(schema.invoices)
+      .where(eq(schema.invoices.id, job.invoiceId!));
+    expect(draftInvoice?.invoiceNumber).toBe("232016");
+    expect(draftInvoice?.status).toBe("draft"); // reserved, not billed until sent
+    expect(draftInvoice?.totalCents).toBe(1368_00);
     expect(job.driveFolderUrl).toContain("Invoice-232016");
     // Invoice is NOT emailed at approval (§2b: only when staff click Send)
     expect(job.invoiceSentAt).toBeNull();
@@ -94,7 +101,7 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     });
     expect(draft.status).toBe("new");
     expect(draft.jobNumber).toBeNull();
-    expect(draft.sageSyncStatus).toBe("not_started");
+    expect(draft.invoiceId).toBeNull();
     expect(draft.subtotalCents).toBe(500_00); // hidden line contributes nothing
     const items = await db
       .select()
@@ -145,7 +152,7 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     ).rejects.toThrow();
   });
 
-  it("marking an unsigned quote Lost never consumes a Sage number", async () => {
+  it("marking an unsigned quote Lost never consumes an invoice number", async () => {
     const db = await getDb();
     const [customer] = await db.select().from(schema.customers).limit(1);
     const lostOne = await createProjectWorkflow({
@@ -178,28 +185,28 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
     expect(project.jobNumber).toBe("232016"); // the lost quote did not burn a number
   });
 
-  it("voids the Sage invoice when a job is cancelled without breaking sequential numbering", async () => {
+  it("voids the invoice when a job is cancelled without breaking sequential numbering", async () => {
     const db = await getDb();
     const [job232015] = await db
       .select()
       .from(schema.jobs)
       .where(eq(schema.jobs.jobNumber, "232015"));
 
-    await voidSageInvoiceForJob(job232015!.id, "Customer postponed campaign to spring", "Admin");
+    await voidJobInvoice(job232015!.id, "Customer postponed campaign to spring", "Admin");
 
     const [updatedJob] = await db
       .select()
       .from(schema.jobs)
       .where(eq(schema.jobs.id, job232015!.id));
     expect(updatedJob?.status).toBe("cancelled");
-    expect(updatedJob?.sagePaymentStatus).toBe("VOID");
+    expect(updatedJob?.paymentStatus).toBe("void");
 
-    const [sageInv] = await db
+    const [inv] = await db
       .select()
-      .from(schema.sageInvoices)
-      .where(eq(schema.sageInvoices.invoiceNumber, "232015"));
-    expect(sageInv?.status).toBe("VOID");
-    expect(sageInv?.outstandingCents).toBe(0);
+      .from(schema.invoices)
+      .where(eq(schema.invoices.invoiceNumber, "232015"));
+    expect(inv?.status).toBe("void");
+    expect(inv?.voidReason).toBe("Customer postponed campaign to spring");
   });
 
   it("stops recurring billing automatically when equipment is returned and runs monthly batches", async () => {
@@ -255,7 +262,7 @@ describe("End-to-end Quote -> Job -> Sage Invoice & Recurring Billing workflows"
       .where(eq(schema.recurringBillingBatchItems.batchId, janBatch.id));
     expect(janItems.find((i) => i.description.includes("MS-003"))).toBeUndefined();
 
-    // Approve & execute Jan 2027 batch -> allocates real Sage numbers (232016+)
+    // Approve & execute Jan 2027 batch -> creates real invoices numbered from 232016
     const executed = await approveAndSendRecurringBatchWorkflow({
       batchId: janBatch.id,
       actorName: "Wajdi (AJ) Masad",

@@ -8,7 +8,6 @@ import { PROVINCE_CODES } from "@/lib/tax";
 
 interface CustomerRow {
   id: number;
-  sageId: string | null;
   name: string;
   companyName: string | null;
   contactPerson: string | null;
@@ -74,7 +73,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
           className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 cursor-pointer"
         >
           <Plus className="w-4 h-4 text-amber-400" />
-          {showAdd ? "Close Form" : "Add Customer (Sync to Sage)"}
+          {showAdd ? "Close Form" : "Add customer"}
         </button>
       </div>
 
@@ -111,7 +110,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
           className="rounded-2xl bg-white border border-slate-200 p-5 shadow-xs space-y-4"
         >
           <h2 className="text-sm font-bold text-slate-900">
-            New Sage Customer Contact
+            New customer
           </h2>
           {error && (
             <div className="text-xs text-rose-600 font-semibold">{error}</div>
@@ -220,7 +219,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
                 disabled={isPending}
                 className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs py-2.5 px-4 cursor-pointer"
               >
-                {isPending ? "Saving…" : "Save & Sync to Sage"}
+                {isPending ? "Saving…" : "Save customer"}
               </button>
             </div>
           </div>
@@ -242,7 +241,7 @@ export function CustomersClient({ customers }: { customers: CustomerRow[] }) {
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-bold text-base text-slate-900">{c.name}</h3>
                   <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">
-                    {c.sageId || "Sage Synced"}
+                    {c.city}
                   </span>
                 </div>
                 <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap items-center gap-3">

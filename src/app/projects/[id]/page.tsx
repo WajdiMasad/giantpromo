@@ -17,7 +17,9 @@ import {
   customers,
   jobAssignments,
   jobFiles,
+  invoices,
   jobItems,
+  payments,
   projects,
   users,
 } from "@/db/schema";
@@ -82,6 +84,15 @@ export default async function ProjectDetailPage(props: {
     .from(activityLog)
     .where(and(eq(activityLog.entityType, "project"), eq(activityLog.entityId, String(project.id))))
     .orderBy(desc(activityLog.createdAt));
+
+  const invoice = project.invoiceId
+    ? ((await db.select().from(invoices).where(eq(invoices.id, project.invoiceId)).limit(1))[0] ?? null)
+    : null;
+  const invoicePayments = invoice
+    ? await db.select().from(payments).where(eq(payments.invoiceId, invoice.id)).orderBy(desc(payments.receivedOn))
+    : [];
+  const paidCents = invoicePayments.reduce((a, pay) => a + pay.amountCents, 0);
+  const balanceCents = invoice && invoice.status !== "void" ? invoice.totalCents - paidCents : 0;
 
   const signed = isSigned(project.status);
   const unsigned = isUnsignedQuote(project.status);
@@ -177,13 +188,6 @@ export default async function ProjectDetailPage(props: {
         </div>
       </div>
 
-      {project.sageSyncStatus === "pending_number" && (
-        <div className="rounded-2xl bg-amber-50 border border-amber-300 p-4 flex items-center gap-3 text-xs sm:text-sm text-amber-950">
-          <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-          Waiting for Sage Accounting to assign this job&apos;s official invoice number. No fallback number is ever invented.
-        </div>
-      )}
-
       {project.status === "action_needed" && project.declineReason && (
         <div className="rounded-2xl bg-red-50 border border-red-300 p-4 text-sm text-red-900">
           <strong>The client asked for changes:</strong> {project.declineReason}
@@ -210,9 +214,12 @@ export default async function ProjectDetailPage(props: {
             jobNumber: project.jobNumber,
             status: project.status,
             scheduledDate: project.scheduledDate || "",
-            sagePaymentStatus: project.sagePaymentStatus,
-            sageSyncStatus: project.sageSyncStatus,
+            paymentStatus: project.paymentStatus,
+            invoiceId: project.invoiceId,
+            invoiceStatus: invoice?.status ?? null,
             totalFormatted: formatCAD(project.totalCents),
+            balanceCents,
+            balanceFormatted: formatCAD(balanceCents),
             invoiceSentAt: project.invoiceSentAt?.toISOString() ?? null,
             invoiceSentToEmail: project.invoiceSentToEmail,
           }}
@@ -358,41 +365,75 @@ export default async function ProjectDetailPage(props: {
 
       {tab === "billing" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs space-y-3 text-sm">
-            <h2 className="text-base font-bold text-slate-900">Sage invoice</h2>
-            {!signed ? (
-              <p className="text-slate-500 text-sm">
-                No invoice yet. The Sage invoice is created automatically the moment the client signs.
-              </p>
-            ) : (
-              <dl className="grid grid-cols-2 gap-y-2 text-xs">
-                <dt className="text-slate-500">Invoice / job #</dt>
-                <dd className="font-mono font-bold">{project.jobNumber ?? "Waiting for Sage"}</dd>
-                <dt className="text-slate-500">Sage status</dt>
-                <dd className="font-semibold">{project.sagePaymentStatus}</dd>
-                <dt className="text-slate-500">Sync</dt>
-                <dd>{project.sageSyncStatus}</dd>
-                <dt className="text-slate-500">Sent to customer</dt>
-                <dd>
-                  {project.invoiceSentAt
-                    ? `${project.invoiceSentToEmail} on ${new Date(project.invoiceSentAt).toLocaleDateString("en-CA")}`
-                    : "Not yet — click Send above when ready"}
-                </dd>
-                {project.voidReason && (
-                  <>
-                    <dt className="text-slate-500">Void reason</dt>
-                    <dd>{project.voidReason}</dd>
-                  </>
-                )}
-              </dl>
-            )}
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs space-y-3 text-sm">
+              <h2 className="text-base font-bold text-slate-900">Invoice</h2>
+              {!invoice ? (
+                <p className="text-slate-500 text-sm">
+                  No invoice yet. The invoice number is reserved the moment the client signs, and billed when you send it.
+                </p>
+              ) : (
+                <dl className="grid grid-cols-2 gap-y-2 text-xs">
+                  <dt className="text-slate-500">Invoice #</dt>
+                  <dd className="font-mono font-bold">{invoice.invoiceNumber}</dd>
+                  <dt className="text-slate-500">Status</dt>
+                  <dd className="font-semibold uppercase">
+                    {invoice.status === "draft" ? "Draft — not billed yet" : invoice.status === "issued" ? "Issued" : "Void"}
+                  </dd>
+                  <dt className="text-slate-500">Invoice date</dt>
+                  <dd>{invoice.issueDate ?? "Set when you send it"}</dd>
+                  <dt className="text-slate-500">Due date</dt>
+                  <dd>{invoice.dueDate ?? "—"}</dd>
+                  <dt className="text-slate-500">Sent to</dt>
+                  <dd>
+                    {invoice.sentToEmail
+                      ? `${invoice.sentToEmail}${invoice.sentAt ? " on " + new Date(invoice.sentAt).toLocaleDateString("en-CA") : ""}`
+                      : "—"}
+                  </dd>
+                  <dt className="text-slate-500">Entered in the books</dt>
+                  <dd>{invoice.capturedBatchId ? `Yes (accounting batch #${invoice.capturedBatchId})` : "Not yet"}</dd>
+                  {invoice.voidReason && (
+                    <>
+                      <dt className="text-slate-500">Void reason</dt>
+                      <dd>{invoice.voidReason}</dd>
+                    </>
+                  )}
+                </dl>
+              )}
+            </div>
+
+            <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs space-y-3">
+              <h2 className="text-base font-bold text-slate-900">Payments received</h2>
+              {invoicePayments.length === 0 ? (
+                <p className="text-xs text-slate-500">No payments recorded yet.</p>
+              ) : (
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                  {invoicePayments.map((pay) => (
+                    <div key={pay.id} className="p-3 text-xs flex justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">
+                          {pay.receivedOn} • {pay.method}
+                        </div>
+                        <div className="text-slate-500">
+                          {pay.reference || "—"} • recorded by {pay.recordedByName}
+                          {pay.capturedBatchId ? ` • in books (batch #${pay.capturedBatchId})` : ""}
+                        </div>
+                      </div>
+                      <strong className="whitespace-nowrap">{formatCAD(pay.amountCents)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs space-y-2 text-sm">
+
+          <div className="rounded-2xl bg-white border border-slate-200/90 p-6 shadow-xs space-y-2 text-sm h-fit">
             <h2 className="text-base font-bold text-slate-900">Totals</h2>
             <div className="flex justify-between text-xs"><span>Subtotal</span><strong>{formatCAD(project.subtotalCents)}</strong></div>
             <div className="flex justify-between text-xs"><span>Tax ({project.taxLabel})</span><strong>{formatCAD(project.taxCents)}</strong></div>
             <div className="flex justify-between text-base font-bold border-t border-slate-200 pt-2"><span>Total</span><span>{formatCAD(project.totalCents)}</span></div>
-            <p className="text-[11px] text-slate-400 pt-2">Payments are recorded in Sage. Online card payments are planned for a later phase.</p>
+            <div className="flex justify-between text-xs"><span>Paid</span><strong className="text-emerald-700">{formatCAD(paidCents)}</strong></div>
+            <div className="flex justify-between text-sm font-bold"><span>Balance owing</span><span>{formatCAD(balanceCents)}</span></div>
           </div>
         </div>
       )}

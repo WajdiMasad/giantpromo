@@ -16,10 +16,10 @@ export default async function CustomersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">
-          Customers (Synced with Sage Contacts)
+          Customers
         </h1>
         <p className="text-sm text-slate-600 mt-0.5">
-          Sage is the master customer list, enriched with site access notes and Halifax / Atlantic install coordinates.
+          Everyone you quote, bill or rent to, with site access notes and install locations.
         </p>
       </div>
 

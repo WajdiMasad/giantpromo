@@ -9,7 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export type UserRole = "admin" | "office" | "installer";
+export type UserRole = "admin" | "office" | "installer" | "accountant";
 
 export const users = pgTable(
   "users",
@@ -94,13 +94,8 @@ export type ProjectStatus =
   | "cancelled";
 export type JobStatus = ProjectStatus;
 
-export type SageSyncStatus =
-  | "not_started"
-  | "pending_number"
-  | "synced"
-  | "failed"
-  | "voided";
-export type SagePaymentStatus = "DRAFT" | "UNPAID" | "PART_PAID" | "PAID" | "VOID";
+/** Derived from the project's invoice and its payments. */
+export type PaymentStatus = "unpaid" | "part_paid" | "paid" | "void";
 
 export const projects = pgTable(
   "projects",
@@ -155,18 +150,9 @@ export const projects = pgTable(
     internalNotes: text("internal_notes").default(""),
     driveFolderId: text("drive_folder_id"),
     driveFolderUrl: text("drive_folder_url"),
-    // Sage master invoice link
-    sageInvoiceId: text("sage_invoice_id"),
-    sageInvoiceNumber: text("sage_invoice_number"),
-    sageSyncStatus: text("sage_sync_status")
-      .$type<SageSyncStatus>()
-      .notNull()
-      .default("not_started"),
-    sageSyncError: text("sage_sync_error"),
-    sagePaymentStatus: text("sage_payment_status")
-      .$type<SagePaymentStatus>()
-      .notNull()
-      .default("DRAFT"),
+    // The invoice for this job (its number is the job number)
+    invoiceId: integer("invoice_id"),
+    paymentStatus: text("payment_status").$type<PaymentStatus>().notNull().default("unpaid"),
     invoiceSentAt: timestamp("invoice_sent_at", { withTimezone: true }),
     invoiceSentByUserId: integer("invoice_sent_by_user_id").references(() => users.id),
     invoiceSentToEmail: text("invoice_sent_to_email"),
@@ -357,8 +343,8 @@ export const recurringBillingBatchItems = pgTable(
       .notNull()
       .default("unchanged"),
     skipThisMonth: boolean("skip_this_month").notNull().default(false),
-    sageInvoiceId: text("sage_invoice_id"),
-    sageInvoiceNumber: text("sage_invoice_number"),
+    invoiceId: integer("invoice_id"),
+    invoiceNumber: text("invoice_number"),
     emailedAt: timestamp("emailed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -369,46 +355,86 @@ export const recurringBillingBatchItems = pgTable(
   ]
 );
 
-export const sageInvoices = pgTable(
-  "sage_invoices",
+/** Singleton settings row (id = 'primary'). The app owns invoice numbering. */
+export const appSettings = pgTable("app_settings", {
+  id: text("id").primaryKey(), // always 'primary'
+  nextInvoiceNumber: integer("next_invoice_number").notNull().default(232016),
+  companyName: text("company_name").notNull().default("Giant Promotions Limited"),
+  hstNumber: text("hst_number").notNull().default("888811650 RT 0001"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type InvoiceKind = "job" | "recurring";
+/** draft = number reserved (job signed) but not yet sent; issued = sent/billed; void = cancelled. */
+export type InvoiceStatus = "draft" | "issued" | "void";
+
+export const invoices = pgTable(
+  "invoices",
   {
     id: serial("id").primaryKey(),
-    sageId: text("sage_id").notNull(),
     invoiceNumber: text("invoice_number").notNull(),
-    contactName: text("contact_name").notNull().default(""),
-    contactSageId: text("contact_sage_id"),
+    kind: text("kind").$type<InvoiceKind>().notNull().default("job"),
+    projectId: integer("project_id").references(() => projects.id),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id),
     reference: text("reference").default(""),
-    status: text("status").$type<SagePaymentStatus>().notNull().default("UNPAID"),
-    date: text("date").notNull(), // YYYY-MM-DD
-    dueDate: text("due_date"), // YYYY-MM-DD
-    netCents: integer("net_cents").notNull().default(0),
+    description: text("description").default(""),
+    status: text("status").$type<InvoiceStatus>().notNull().default("draft"),
+    issueDate: text("issue_date"), // YYYY-MM-DD, set when issued
+    dueDate: text("due_date"),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    taxLabel: text("tax_label").notNull().default("14% HST"),
     taxCents: integer("tax_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull().default(0),
-    outstandingCents: integer("outstanding_cents").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sentToEmail: text("sent_to_email"),
+    sentByUserId: integer("sent_by_user_id").references(() => users.id),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    /** The accountant batch in which this invoice was captured into the books. */
+    capturedBatchId: integer("captured_batch_id"),
+    /** The batch in which a later void was captured (if voided after capture). */
+    voidCapturedBatchId: integer("void_captured_batch_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("sage_invoices_sage_id_idx").on(t.sageId)]
+  (t) => [uniqueIndex("invoices_number_idx").on(t.invoiceNumber)]
 );
 
-export const sageConnection = pgTable("sage_connection", {
-  id: text("id").primaryKey(), // always 'primary'
-  environment: text("environment")
-    .$type<"sandbox" | "production">()
+export type PaymentMethod = "cheque" | "etransfer" | "cash" | "card" | "other";
+
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id")
     .notNull()
-    .default("sandbox"),
-  businessName: text("business_name").default("Sage Test Business"),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  resourceOwnerId: text("resource_owner_id"),
-  nextNumberPreview: integer("next_number_preview").notNull().default(232016),
-  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
-  lastSyncStatus: text("last_sync_status")
-    .$type<"connected" | "disconnected" | "syncing" | "error">()
-    .notNull()
-    .default("connected"),
-  lastSyncError: text("last_sync_error"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    .references(() => invoices.id),
+  receivedOn: text("received_on").notNull(), // YYYY-MM-DD
+  amountCents: integer("amount_cents").notNull(),
+  method: text("method").$type<PaymentMethod>().notNull().default("etransfer"),
+  reference: text("reference").default(""),
+  notes: text("notes").default(""),
+  recordedByUserId: integer("recorded_by_user_id").references(() => users.id),
+  recordedByName: text("recorded_by_name").notNull().default("Staff"),
+  capturedBatchId: integer("captured_batch_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One accountant "capture" session: everything up to a date, entered into the books at once. */
+export const accountingBatches = pgTable("accounting_batches", {
+  id: serial("id").primaryKey(),
+  throughDate: text("through_date").notNull(), // YYYY-MM-DD cut-off
+  capturedByUserId: integer("captured_by_user_id").references(() => users.id),
+  capturedByName: text("captured_by_name").notNull().default("Accountant"),
+  note: text("note").default(""),
+  invoiceCount: integer("invoice_count").notNull().default(0),
+  voidCount: integer("void_count").notNull().default(0),
+  paymentCount: integer("payment_count").notNull().default(0),
+  salesNetCents: integer("sales_net_cents").notNull().default(0),
+  hstCents: integer("hst_cents").notNull().default(0),
+  salesTotalCents: integer("sales_total_cents").notNull().default(0),
+  paymentsCents: integer("payments_cents").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const activityLog = pgTable("activity_log", {

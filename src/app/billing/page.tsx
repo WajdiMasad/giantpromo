@@ -98,7 +98,7 @@ export default async function RecurringBillingPage() {
               isHalfMonthProrated: item.isHalfMonthProrated,
               changeFlag: item.changeFlag,
               skipThisMonth: item.skipThisMonth,
-              sageInvoiceNumber: item.sageInvoiceNumber,
+              invoiceNumber: item.invoiceNumber,
             })),
         }))}
         customers={customerList}
