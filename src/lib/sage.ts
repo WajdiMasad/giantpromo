@@ -8,6 +8,7 @@ import {
   sageInvoices,
 } from "@/db/schema";
 import { toCents } from "@/lib/money";
+import type { SagePaymentStatus } from "@/db/schema";
 
 const SAGE_TOKEN_URL = "https://oauth.accounting.sage.com/token";
 const SAGE_API_BASE = "https://api.accounting.sage.com/v3.1";
@@ -221,10 +222,11 @@ export async function syncLiveSageReadOnly(): Promise<{
           }
         }
 
-        const statusId =
+        const rawStatus =
           typeof inv.status === "object" && inv.status !== null
             ? inv.status.id || "UNPAID"
             : String(inv.status || "UNPAID");
+        const statusId = rawStatus as SagePaymentStatus;
 
         const contactName =
           inv.contact?.name ||
@@ -291,7 +293,7 @@ export async function syncLiveSageReadOnly(): Promise<{
     await db
       .update(sageConnection)
       .set({
-        environment: "live",
+        environment: "production",
         businessName,
         resourceOwnerId: businessId,
         nextNumberPreview: nextInvoiceNumber,

@@ -55,7 +55,7 @@ export async function GET(request: Request) {
   await db
     .update(sageConnection)
     .set({
-      environment: "live",
+      environment: "production",
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       expiresAt: new Date(Date.now() + tokenData.expires_in * 1000),

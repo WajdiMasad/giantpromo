@@ -1,154 +1,146 @@
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
-import {
-  ArrowRight,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  DollarSign,
-  Eye,
-  FileCheck2,
-  HardHat,
-  Plus,
-  Send,
-  Signpost,
-  TrendingUp,
-} from "lucide-react";
+import { AlertCircle, ExternalLink, HardHat, Plus, Send } from "lucide-react";
 import { getDb } from "@/db";
-import {
-  activityLog,
-  customers,
-  equipment,
-  jobs,
-  quotes,
-  recurringBillingPlans,
-  sageInvoices,
-} from "@/db/schema";
+import { customers, jobs, quotes } from "@/db/schema";
 import { formatCAD } from "@/lib/money";
 import { getSageConnectionState } from "@/lib/sage";
 import { DashboardInvoiceActions } from "@/components/DashboardInvoiceActions";
+import { CopyQuoteLinkButton } from "@/components/CopyQuoteLinkButton";
 
 export const dynamic = "force-dynamic";
+
+const DAY_MS = 86_400_000;
+
+function daysAgo(d: Date | string | null | undefined, now: number): number | null {
+  if (!d) return null;
+  return Math.floor((now - new Date(d).getTime()) / DAY_MS);
+}
+
+function dayLabel(days: number | null): string {
+  if (days === null) return "";
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
+}
+
+const JOB_STAGE_LABEL: Record<string, string> = {
+  approved: "Approved • not scheduled",
+  scheduled: "Scheduled",
+  in_progress: "In progress",
+  installed: "Installed • invoice not sent",
+  invoiced: "Invoiced • awaiting payment",
+};
+
+const JOB_STAGE_STYLE: Record<string, string> = {
+  approved: "bg-slate-100 text-slate-700 border-slate-200",
+  scheduled: "bg-blue-50 text-blue-700 border-blue-200",
+  in_progress: "bg-amber-50 text-amber-800 border-amber-200",
+  installed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  invoiced: "bg-purple-50 text-purple-700 border-purple-200",
+};
 
 export default async function DashboardPage() {
   const db = await getDb();
   const sageState = await getSageConnectionState();
 
-  const allQuotes = await db
-    .select({
-      quote: quotes,
-      customer: customers,
-    })
-    .from(quotes)
-    .innerJoin(customers, eq(quotes.customerId, customers.id))
-    .orderBy(desc(quotes.createdAt));
-
   const allJobs = await db
-    .select({
-      job: jobs,
-      customer: customers,
-    })
+    .select({ job: jobs, customer: customers })
     .from(jobs)
     .innerJoin(customers, eq(jobs.customerId, customers.id))
     .orderBy(desc(jobs.id));
 
-  const allSageInvoices = await db
-    .select()
-    .from(sageInvoices)
-    .orderBy(desc(sageInvoices.invoiceNumber));
+  const allQuotes = await db
+    .select({ quote: quotes, customer: customers })
+    .from(quotes)
+    .innerJoin(customers, eq(quotes.customerId, customers.id))
+    .orderBy(desc(quotes.createdAt));
 
-  const allEquipment = await db.select().from(equipment);
-  const activePlans = await db
-    .select()
-    .from(recurringBillingPlans)
-    .where(eq(recurringBillingPlans.status, "active"));
-
-  const recentActivity = await db
-    .select()
-    .from(activityLog)
-    .orderBy(desc(activityLog.createdAt))
-    .limit(8);
-
+  const nowMs = Date.now();
   const today = new Date().toISOString().slice(0, 10);
 
-  // KPI calculations
-  const nonVoidInvoices = allSageInvoices.filter((i) => i.status !== "VOID");
-  const totalInvoicedCents = nonVoidInvoices.reduce((acc, i) => acc + i.totalCents, 0);
-  const paidCents = nonVoidInvoices
-    .filter((i) => i.status === "PAID")
-    .reduce((acc, i) => acc + i.totalCents, 0);
+  // 1. Jobs that still need to be installed (not yet installed, not cancelled)
+  const toInstall = allJobs
+    .filter(({ job }) => ["approved", "scheduled", "in_progress"].includes(job.status))
+    .map((row) => {
+      const d = row.job.scheduledDate;
+      let when: "overdue" | "today" | "upcoming" | "unscheduled";
+      if (!d) when = "unscheduled";
+      else if (d < today) when = "overdue";
+      else if (d === today) when = "today";
+      else when = "upcoming";
+      return { ...row, when };
+    });
 
-  const overdueInvoices = nonVoidInvoices.filter(
-    (i) => i.status !== "PAID" && i.dueDate && i.dueDate < today
+  // "Now" = overdue, today, in progress, rush, or still needing a date
+  const installNow = toInstall
+    .filter(
+      ({ job, when }) =>
+        when === "overdue" ||
+        when === "today" ||
+        when === "unscheduled" ||
+        job.status === "in_progress" ||
+        job.priority === "rush"
+    )
+    .sort((a, b) => {
+      const weight = (r: typeof a) =>
+        r.when === "overdue" ? 0 : r.job.status === "in_progress" ? 1 : r.when === "today" ? 2 : r.job.priority === "rush" ? 3 : 4;
+      return weight(a) - weight(b);
+    });
+  const installLater = toInstall.filter((r) => !installNow.includes(r));
+
+  // 2. Open projects = every job not yet paid or cancelled
+  const openProjects = allJobs.filter(({ job }) =>
+    ["approved", "scheduled", "in_progress", "installed", "invoiced"].includes(job.status)
   );
-  const overdueCents = overdueInvoices.reduce((acc, i) => acc + i.outstandingCents, 0);
-
-  const mrrCents = activePlans.reduce((acc, p) => acc + p.monthlyAmountCents, 0);
-
-  const approvedQuotes = allQuotes.filter((q) => q.quote.status === "approved");
-  const declinedQuotes = allQuotes.filter((q) => q.quote.status === "declined");
-  const openQuotes = allQuotes.filter((q) =>
-    ["draft", "sent", "viewed"].includes(q.quote.status)
-  );
-  const decidedCount = approvedQuotes.length + declinedQuotes.length;
-  const winRatePct =
-    decidedCount > 0
-      ? Math.round((approvedQuotes.length / decidedCount) * 100)
-      : 100;
-
-  // Ready to send: Jobs marked Installed where invoice hasn't been sent yet (§2b)
-  const readyToSendJobs = allJobs.filter(
+  const readyToInvoice = allJobs.filter(
     ({ job }) => job.status === "installed" && !job.invoiceSentAt
   );
+  const openProjectValueCents = openProjects.reduce((a, { job }) => a + job.totalCents, 0);
 
-  const rentedCount = allEquipment.filter((e) => e.status === "rented").length;
+  // 3. Quotes with no decision yet (not approved, not declined)
+  const awaiting = allQuotes
+    .filter(({ quote }) => ["draft", "sent", "viewed"].includes(quote.status))
+    .sort((a, b) => {
+      // viewed-but-undecided first (hottest), then oldest sent first
+      const rank = (s: string) => (s === "viewed" ? 0 : s === "sent" ? 1 : 2);
+      const r = rank(a.quote.status) - rank(b.quote.status);
+      if (r !== 0) return r;
+      return (
+        new Date(a.quote.sentAt ?? a.quote.createdAt).getTime() -
+        new Date(b.quote.sentAt ?? b.quote.createdAt).getTime()
+      );
+    });
+  const awaitingValueCents = awaiting.reduce((a, { quote }) => a + quote.totalCents, 0);
 
   return (
     <div className="space-y-8">
-      {/* Top Header */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full mb-2">
-            <span>Sage Master Sequence Active • Next #{sageState.nextNumberPreview}</span>
-          </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-            Command Center
+            Today
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Quotes → Jobs → Sage Invoices & Recurring Equipment Rentals for Giant Promotions Limited
+            {new Date().toLocaleDateString("en-CA", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}{" "}
+            • Next Sage invoice #{sageState.nextNumberPreview}
           </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2.5">
-          <a
-            href="/api/sage/connect"
-            className={`inline-flex items-center gap-2 rounded-xl font-semibold text-xs px-3.5 py-2.5 transition shadow-xs whitespace-nowrap ${
-              sageState.environment === "live" && sageState.accessToken
-                ? "border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900"
-                : "border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                sageState.environment === "live" && sageState.accessToken
-                  ? "bg-emerald-500"
-                  : "bg-amber-500"
-              }`}
-            />
-            {sageState.environment === "live" && sageState.accessToken
-              ? `Sage Live Connected • Next #${sageState.nextNumberPreview}`
-              : "Connect Live Sage OAuth"}
-          </a>
           <Link
             href="/installer"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm px-4 py-2.5 transition shadow-xs whitespace-nowrap"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm px-4 py-2.5 whitespace-nowrap"
           >
             <HardHat className="w-4 h-4 text-amber-600" />
             Installer View
           </Link>
           <Link
             href="/quotes/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2.5 transition shadow-sm whitespace-nowrap"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2.5 whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-amber-400" />
             New Quote
@@ -156,27 +148,55 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Ready-to-Send Invoice Alert Banner (§2b) */}
-      {readyToSendJobs.length > 0 && (
-        <div className="rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-5 shadow-xs">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="h-10 w-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 mt-0.5">
-                <Send className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  {readyToSendJobs.length} Installed Job{readyToSendJobs.length > 1 ? "s" : ""} Ready to Invoice
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-700 mt-0.5">
-                  Installers marked these jobs complete. Per your rule, customers only receive their Sage invoice when you click <strong>Send Invoice</strong>.
-                </p>
-              </div>
-            </div>
+      {/* Summary strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <a
+          href="#install-now"
+          className="rounded-2xl bg-white border border-slate-200 hover:border-amber-400 p-4 transition"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Need installing now
           </div>
+          <div className="text-3xl font-black text-slate-900 mt-1">{installNow.length}</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {toInstall.length} not yet installed in total
+          </div>
+        </a>
+        <a
+          href="#open-projects"
+          className="rounded-2xl bg-white border border-slate-200 hover:border-amber-400 p-4 transition"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Open projects
+          </div>
+          <div className="text-3xl font-black text-slate-900 mt-1">{openProjects.length}</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {formatCAD(openProjectValueCents)} incl. tax
+          </div>
+        </a>
+        <a
+          href="#quotes-waiting"
+          className="rounded-2xl bg-white border border-slate-200 hover:border-amber-400 p-4 transition"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Quotes awaiting an answer
+          </div>
+          <div className="text-3xl font-black text-slate-900 mt-1">{awaiting.length}</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {formatCAD(awaitingValueCents)} incl. tax
+          </div>
+        </a>
+      </div>
 
-          <div className="mt-4 divide-y divide-amber-200/80 bg-white rounded-xl border border-amber-200 overflow-hidden">
-            {readyToSendJobs.map(({ job, customer }) => (
+      {/* Installed but not invoiced */}
+      {readyToInvoice.length > 0 && (
+        <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+            <Send className="w-4 h-4 text-amber-600" />
+            {readyToInvoice.length} installed job{readyToInvoice.length > 1 ? "s" : ""} ready to invoice
+          </div>
+          <div className="mt-3 divide-y divide-amber-200 bg-white rounded-xl border border-amber-200 overflow-hidden">
+            {readyToInvoice.map(({ job, customer }) => (
               <div
                 key={job.id}
                 className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
@@ -186,16 +206,12 @@ export default async function DashboardPage() {
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400">
                       #{job.jobNumber ?? "Pending"}
                     </span>
-                    <Link
-                      href={`/jobs/${job.id}`}
-                      className="font-semibold text-sm text-slate-900 hover:underline"
-                    >
+                    <Link href={`/jobs/${job.id}`} className="font-semibold text-sm text-slate-900 hover:underline">
                       {job.title}
                     </Link>
                   </div>
                   <div className="text-xs text-slate-600 mt-1">
-                    {customer.name} • PO: {job.poReference || "—"} • Total:{" "}
-                    <strong className="text-slate-900">{formatCAD(job.totalCents)}</strong> ({job.taxLabel})
+                    {customer.name} • {formatCAD(job.totalCents)}
                   </div>
                 </div>
                 <DashboardInvoiceActions
@@ -210,379 +226,234 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* 4 Executive KPI Cards (Interactive Drill-Downs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Link
-          href="/jobs"
-          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-emerald-400 p-5 shadow-xs hover:shadow-md transition block"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-emerald-700">
-              Sage Billed Revenue →
-            </span>
-            <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
+      {/* 1. Need installing now */}
+      <section id="install-now" className="scroll-mt-6 space-y-3">
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Need installing now</h2>
+            <p className="text-xs text-slate-500">
+              Overdue, scheduled today, in progress, rush, or still missing an install date.
+            </p>
           </div>
-          <div className="text-2xl font-bold text-slate-900 mt-3">
-            {formatCAD(totalInvoicedCents)}
-          </div>
-          <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap items-center justify-between gap-1">
-            <span>
-              Collected: <strong className="text-emerald-700">{formatCAD(paidCents)}</strong>
-            </span>
-            <span className="text-[11px] font-medium text-slate-500">
-              +{formatCAD(mrrCents)}/mo MRR
-            </span>
-          </div>
-        </Link>
+          <Link href="/jobs" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+            All jobs →
+          </Link>
+        </div>
 
-        <Link
-          href="/quotes"
-          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-blue-400 p-5 shadow-xs hover:shadow-md transition block"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-blue-700">
-              Quotes & Win Rate →
-            </span>
-            <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
+        {installNow.length === 0 ? (
+          <div className="rounded-2xl bg-white border border-slate-200 p-6 text-center text-sm text-slate-500">
+            Nothing needs installing right now.
           </div>
-          <div className="text-2xl font-bold text-slate-900 mt-3">
-            {winRatePct}%{" "}
-            <span className="text-sm font-medium text-slate-500">
-              ({approvedQuotes.length} won / {openQuotes.length} open)
-            </span>
-          </div>
-          <div className="text-xs text-slate-600 mt-1.5">
-            Open pipeline:{" "}
-            <strong className="text-slate-900">
-              {formatCAD(openQuotes.reduce((acc, q) => acc + q.quote.totalCents, 0))}
-            </strong>
-          </div>
-        </Link>
-
-        <Link
-          href="/jobs"
-          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-rose-400 p-5 shadow-xs hover:shadow-md transition block"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-rose-700">
-              Overdue in Sage →
-            </span>
-            <div className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-rose-600 mt-3">
-            {formatCAD(overdueCents)}
-          </div>
-          <div className="text-xs text-slate-600 mt-1.5">
-            {overdueInvoices.length} overdue invoice{overdueInvoices.length === 1 ? "" : "s"} past Net 30
-          </div>
-        </Link>
-
-        <Link
-          href="/equipment"
-          className="group rounded-2xl bg-white border border-slate-200/90 hover:border-amber-400 p-5 shadow-xs hover:shadow-md transition block"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-amber-700">
-              Rental Fleet Active →
-            </span>
-            <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Signpost className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-slate-900 mt-3">
-            {rentedCount} / {allEquipment.length}{" "}
-            <span className="text-sm font-medium text-slate-500">units deployed</span>
-          </div>
-          <div className="text-xs text-slate-600 mt-1.5">
-            {activePlans.length} active recurring billing plans
-          </div>
-        </Link>
-      </div>
-
-      {/* Two-Column Pipeline: Active Jobs (Sage Master Numbered) + Quotes Pipeline */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Active Jobs */}
-        <div className="lg:col-span-7 rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Active Jobs (Sage Master Numbered)
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Every approved quote immediately gets its official Sage invoice number
-              </p>
-            </div>
-            <Link
-              href="/jobs"
-              className="text-xs font-semibold text-slate-700 hover:text-slate-950 inline-flex items-center gap-1"
-            >
-              All Jobs <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {allJobs.slice(0, 6).map(({ job, customer }) => (
-              <div
+        ) : (
+          <div className="rounded-2xl bg-white border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+            {installNow.map(({ job, customer, when }) => (
+              <Link
                 key={job.id}
-                className="p-4 hover:bg-slate-50/80 transition flex items-center justify-between gap-4"
+                href={`/jobs/${job.id}`}
+                className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50 transition"
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400 whitespace-nowrap">
                       {job.jobNumber ? `#${job.jobNumber}` : "⏳ Waiting for Sage #"}
                     </span>
-                    <StatusPill status={job.status} />
                     {job.priority === "rush" && (
-                      <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded bg-rose-100 text-rose-700">
+                      <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded bg-rose-600 text-white">
                         Rush
                       </span>
                     )}
+                    {when === "overdue" && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                        <AlertCircle className="w-3 h-3" /> Overdue
+                      </span>
+                    )}
+                    {when === "today" && (
+                      <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap">
+                        Today
+                      </span>
+                    )}
+                    {when === "unscheduled" && (
+                      <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 whitespace-nowrap">
+                        Needs a date
+                      </span>
+                    )}
+                    {job.status === "in_progress" && (
+                      <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                        In progress
+                      </span>
+                    )}
                   </div>
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="block font-semibold text-sm text-slate-900 hover:text-amber-600 truncate mt-1.5"
-                  >
+                  <div className="font-semibold text-sm text-slate-900 mt-1.5 truncate">
                     {job.title}
-                  </Link>
+                  </div>
                   <div className="text-xs text-slate-500 mt-0.5 truncate">
-                    {customer.name} • Scheduled: {job.scheduledDate || "TBD"} •{" "}
-                    {job.siteProvince} ({job.taxLabel})
+                    {customer.name} • {job.siteAddress || "No site address"}
                   </div>
                 </div>
-
-                <div className="text-right shrink-0">
-                  <div className="font-bold text-sm text-slate-900">
-                    {formatCAD(job.totalCents)}
+                <div className="text-right shrink-0 text-xs">
+                  <div className="font-semibold text-slate-900 whitespace-nowrap">
+                    {job.scheduledDate || "No date"}
                   </div>
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="text-xs font-medium text-amber-600 hover:underline"
-                  >
-                    Open →
-                  </Link>
+                  <div className="text-slate-500">{formatCAD(job.totalCents)}</div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
+        )}
+
+        {installLater.length > 0 && (
+          <p className="text-xs text-slate-500">
+            Plus {installLater.length} more scheduled for later dates (see Open projects).
+          </p>
+        )}
+      </section>
+
+      {/* 2. Open projects */}
+      <section id="open-projects" className="scroll-mt-6 space-y-3">
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Open projects</h2>
+            <p className="text-xs text-slate-500">
+              Every job that isn&apos;t paid or cancelled yet, with where it&apos;s stuck.
+            </p>
+          </div>
+          <Link href="/jobs" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+            Jobs board →
+          </Link>
         </div>
 
-        {/* Quotes Pipeline + Customer View Tracking */}
-        <div className="lg:col-span-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Recent Quotes & Online Approval
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Tracks when customers open and sign their approval link
-              </p>
-            </div>
-            <Link
-              href="/quotes"
-              className="text-xs font-semibold text-slate-700 hover:text-slate-950 inline-flex items-center gap-1"
-            >
-              All Quotes <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+        {openProjects.length === 0 ? (
+          <div className="rounded-2xl bg-white border border-slate-200 p-6 text-center text-sm text-slate-500">
+            No open projects.
           </div>
-
-          <div className="divide-y divide-slate-100">
-            {allQuotes.slice(0, 5).map(({ quote, customer }) => (
-              <div key={quote.id} className="p-4 hover:bg-slate-50/80 transition space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                      {quote.quoteNumber}
-                    </span>
-                    <QuoteStatusBadge status={quote.status} />
-                  </div>
-                  <span className="font-bold text-sm text-slate-900">
-                    {formatCAD(quote.totalCents)}
-                  </span>
-                </div>
-                <div className="font-semibold text-sm text-slate-900 truncate">
-                  {quote.title}
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
-                  <span className="truncate">{customer.name}</span>
-                  <Link
-                    href={`/q/${quote.publicToken}`}
-                    className="text-amber-600 hover:underline font-medium shrink-0"
-                  >
-                    Customer Link ↗
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Row: Overdue Sage Invoices + Live Activity Log */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Sage Invoices & Overdue Watchlist
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Synced from Sage Accounting (232010 → {sageState.nextNumberPreview - 1})
-              </p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
+        ) : (
+          <div className="rounded-2xl bg-white border border-slate-200 overflow-x-auto">
+            <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                  <th className="py-3 px-4">Sage #</th>
-                  <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Due Date</th>
-                  <th className="py-3 px-4">Status</th>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="py-3 px-4">Job #</th>
+                  <th className="py-3 px-4">Customer &amp; project</th>
+                  <th className="py-3 px-4">Stage</th>
+                  <th className="py-3 px-4">Install date</th>
                   <th className="py-3 px-4 text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allSageInvoices.slice(0, 6).map((inv) => {
-                  const isOverdue =
-                    inv.status === "UNPAID" && inv.dueDate && inv.dueDate < today;
-                  const linkedJob = allJobs.find(
-                    ({ job }) => job.jobNumber === inv.invoiceNumber
-                  )?.job;
-                  return (
-                    <tr key={inv.id} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4 font-mono font-bold text-xs text-slate-900 whitespace-nowrap">
-                        {linkedJob ? (
-                          <Link
-                            href={`/jobs/${linkedJob.id}`}
-                            className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 hover:bg-slate-800"
-                          >
-                            #{inv.invoiceNumber}
-                          </Link>
-                        ) : (
-                          <span>#{inv.invoiceNumber}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-900 text-xs sm:text-sm">
-                          {inv.contactName}
-                        </div>
-                        <div className="text-[11px] text-slate-500">{inv.reference}</div>
-                      </td>
-                      <td className="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">
-                        {inv.dueDate || "—"}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {inv.status === "PAID" ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3" /> PAID
-                          </span>
-                        ) : inv.status === "VOID" ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 line-through">
-                            VOID
-                          </span>
-                        ) : isOverdue ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
-                            <AlertCircle className="w-3 h-3" /> OVERDUE
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                            <Clock className="w-3 h-3" /> UNPAID
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-slate-900 whitespace-nowrap">
-                        {formatCAD(inv.totalCents)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {openProjects.map(({ job, customer }) => (
+                  <tr key={job.id} className="hover:bg-slate-50/80">
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <Link
+                        href={`/jobs/${job.id}`}
+                        className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-amber-400"
+                      >
+                        {job.jobNumber ? `#${job.jobNumber}` : "⏳ Pending"}
+                      </Link>
+                    </td>
+                    <td className="py-3 px-4">
+                      <Link href={`/jobs/${job.id}`} className="font-semibold text-slate-900 hover:text-amber-600">
+                        {job.title}
+                      </Link>
+                      <div className="text-xs text-slate-500">{customer.name}</div>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span
+                        className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                          JOB_STAGE_STYLE[job.status] ?? "bg-slate-100 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {JOB_STAGE_LABEL[job.status] ?? job.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">
+                      {job.scheduledDate || "—"}
+                    </td>
+                    <td className="py-3 px-4 text-right font-semibold text-slate-900 whitespace-nowrap">
+                      {formatCAD(job.totalCents)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
+        )}
+      </section>
 
-        {/* Activity Audit Feed */}
-        <div className="lg:col-span-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">Audit Trail</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Every quote approval, Sage number allocation & equipment return
+      {/* 3. Quotes awaiting an answer */}
+      <section id="quotes-waiting" className="scroll-mt-6 space-y-3">
+        <div className="flex items-end justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Quotes awaiting an answer</h2>
+            <p className="text-xs text-slate-500">
+              Not approved and not declined. Opened-but-undecided quotes are listed first.
             </p>
           </div>
-          <div className="p-4 space-y-3.5">
-            {recentActivity.map((act) => {
-              const dotColor = act.action.includes("approved") || act.action.includes("paid") || act.action.includes("live_synced")
-                ? "bg-emerald-500"
-                : act.action.includes("installed")
-                  ? "bg-purple-500"
-                  : act.action.includes("voided")
-                    ? "bg-rose-500"
-                    : "bg-amber-500";
+          <Link href="/quotes" className="text-xs font-semibold text-slate-700 hover:text-slate-950">
+            All quotes →
+          </Link>
+        </div>
+
+        {awaiting.length === 0 ? (
+          <div className="rounded-2xl bg-white border border-slate-200 p-6 text-center text-sm text-slate-500">
+            Every quote has been answered.
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-white border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+            {awaiting.map(({ quote, customer }) => {
+              const sentDays = daysAgo(quote.sentAt, nowMs);
+              const viewedDays = daysAgo(quote.firstViewedAt, nowMs);
+              const expired = quote.validUntil && quote.validUntil < today;
               return (
-                <div key={act.id} className="flex items-start gap-3 text-xs">
-                  <div className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-1.5 shrink-0`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-slate-900">{act.summary}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      {act.actorName} • {new Date(act.createdAt).toLocaleString("en-CA")}
+                <div
+                  key={quote.id}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                        {quote.quoteNumber}
+                      </span>
+                      {quote.status === "viewed" ? (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                          Customer opened it {dayLabel(viewedDays)}
+                        </span>
+                      ) : quote.status === "sent" ? (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                          Sent {dayLabel(sentDays)} • not opened
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
+                          Draft • not sent
+                        </span>
+                      )}
+                      {expired && (
+                        <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                          Past valid date
+                        </span>
+                      )}
                     </div>
+                    <div className="font-semibold text-sm text-slate-900 mt-1.5 truncate">
+                      {quote.title}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5 truncate">{customer.name}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-bold text-sm text-slate-900 mr-1 whitespace-nowrap">
+                      {formatCAD(quote.totalCents)}
+                    </span>
+                    <CopyQuoteLinkButton publicToken={quote.publicToken} />
+                    <Link
+                      href={`/q/${quote.publicToken}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3 py-1.5 whitespace-nowrap"
+                    >
+                      Open <ExternalLink className="w-3.5 h-3.5 text-amber-600" />
+                    </Link>
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      </div>
+        )}
+      </section>
     </div>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    approved: "bg-blue-50 text-blue-700 border-blue-200",
-    scheduled: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    in_progress: "bg-amber-50 text-amber-800 border-amber-200",
-    installed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    invoiced: "bg-purple-50 text-purple-700 border-purple-200",
-    paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    cancelled: "bg-slate-100 text-slate-500 border-slate-200 line-through",
-  };
-  return (
-    <span
-      className={`text-[11px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-        styles[status] ?? "bg-slate-100 text-slate-700 border-slate-200"
-      }`}
-    >
-      {status.replace("_", " ")}
-    </span>
-  );
-}
-
-function QuoteStatusBadge({ status }: { status: string }) {
-  if (status === "approved") {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <FileCheck2 className="w-3 h-3" /> Approved
-      </span>
-    );
-  }
-  if (status === "viewed") {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-        <Eye className="w-3 h-3" /> Customer Viewed
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 uppercase">
-      {status}
-    </span>
   );
 }
