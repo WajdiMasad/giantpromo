@@ -459,23 +459,6 @@
     "siteNotes": "Sage ID: AUTO-656"
   },
   {
-    "sageId": "AUTO-706",
-    "name": "Alt Filtration",
-    "companyName": "Alt Filtration",
-    "contactPerson": "Nathan Thompson",
-    "email": "nthompson@altfiltration.com",
-    "phone": "902-267-7780",
-    "addressLine1": "80 Raddall Ave",
-    "addressLine2": "",
-    "city": "Dartmouth",
-    "province": "NS",
-    "postalCode": "B3B 1T7",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: AUTO-706 • 1 Sage invoices ($385.25 total, last: 2024-09-23)"
-  },
-  {
     "sageId": "AUTO-251",
     "name": "Amanda Cross",
     "companyName": "Amanda Cross",
@@ -1836,23 +1819,6 @@
     "siteNotes": "Sage ID: CCS • 1 Sage invoices ($575.00 total, last: 2023-10-12)"
   },
   {
-    "sageId": "AUTO-306",
-    "name": "Canadian Cancer Society (Krista O'Connor)",
-    "companyName": "Canadian Cancer Society",
-    "contactPerson": "Krista O'Connor",
-    "email": "krista.oconnor@cancer.ca",
-    "phone": "",
-    "addressLine1": "",
-    "addressLine2": "",
-    "city": "",
-    "province": "NS",
-    "postalCode": "",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: AUTO-306 • 2 Sage invoices ($632.50 total, last: 2023-10-26)"
-  },
-  {
     "sageId": "AUTO-218",
     "name": "Canadian Ski Patrol - Atlantic East Division",
     "companyName": "Canadian Ski Patrol - Atlantic East Division",
@@ -2310,23 +2276,6 @@
     "paymentTerms": "Net 30",
     "taxExempt": false,
     "siteNotes": "Sage ID: Wendys • 62 Sage invoices ($136,806.30 total, last: 2026-03-01)"
-  },
-  {
-    "sageId": "chii",
-    "name": "Chii Samosa and more",
-    "companyName": "Chii Samosa and more",
-    "contactPerson": "Naji",
-    "email": "najifinefood@gmail.com",
-    "phone": "",
-    "addressLine1": "6428 Quinpool Road",
-    "addressLine2": "",
-    "city": "Halifax",
-    "province": "NS",
-    "postalCode": "B3L 1A8",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: chii • 2 Sage invoices ($3,737.50 total, last: 2023-11-30)"
   },
   {
     "sageId": "AUTO-155",
@@ -7089,23 +7038,6 @@
     "siteNotes": "Sage ID: AUTO-765 • 2 Sage invoices ($706.80 total, last: 2025-07-30)"
   },
   {
-    "sageId": "Old Micmac",
-    "name": "Mic Mac AAC",
-    "companyName": "Mic Mac AAC",
-    "contactPerson": "Greg",
-    "email": "manager@micmacaac.com",
-    "phone": "",
-    "addressLine1": "192 Prince Albert Road",
-    "addressLine2": "",
-    "city": "Dartmouth",
-    "province": "NS",
-    "postalCode": "B2Y 1M8",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: Old Micmac • 1 Sage invoices ($3,271.80 total, last: 2025-06-02)"
-  },
-  {
     "sageId": "MMM",
     "name": "Mic Mac Mall Limited Partnership",
     "companyName": "Mic Mac Mall Limited Partnership",
@@ -7172,23 +7104,6 @@
     "paymentTerms": "Net 30",
     "taxExempt": false,
     "siteNotes": "Sage ID: AUTO-144 • 1 Sage invoices ($431.25 total, last: 2022-04-27)"
-  },
-  {
-    "sageId": "OldMicmac2",
-    "name": "Micmac Mall",
-    "companyName": "Micmac Mall",
-    "contactPerson": "Lindsay Cochrane",
-    "email": "lindsay.cochrane@cushwake.com",
-    "phone": "",
-    "addressLine1": "21 Micmac Blvd",
-    "addressLine2": "",
-    "city": "Dartmouth",
-    "province": "NS",
-    "postalCode": "",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: OldMicmac2 • 1 Sage invoices ($1,784.10 total, last: 2025-11-18)"
   },
   {
     "sageId": "AUTO-205",
@@ -11390,23 +11305,6 @@
     "siteNotes": "Sage ID: AUTO-343 • 3 Sage invoices ($4,169.02 total, last: 2024-06-30)"
   },
   {
-    "sageId": "AUTO-369",
-    "name": "South Shore Chevrolet Liverpool",
-    "companyName": "South Shore Chevrolet Liverpool",
-    "contactPerson": "",
-    "email": "mcannon@steeleauto.com",
-    "phone": "",
-    "addressLine1": "162 Bristol Ave",
-    "addressLine2": "",
-    "city": "Liverpool",
-    "province": "NS",
-    "postalCode": "B0T 1K0",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: AUTO-369 • 1 Sage invoices ($575.44 total, last: 2022-11-19)"
-  },
-  {
     "sageId": "AUTO-234",
     "name": "South Shore Waldorf School",
     "companyName": "South Shore Waldorf School",
@@ -12068,23 +11966,6 @@
     "paymentTerms": "Net 30",
     "taxExempt": false,
     "siteNotes": "Sage ID: SVolk • 184 Sage invoices ($98,799.15 total, last: 2026-02-27)"
-  },
-  {
-    "sageId": "AUTO-64",
-    "name": "Steele Volvo",
-    "companyName": "Steele Volvo",
-    "contactPerson": "Tony MacDonald",
-    "email": "ap@volvoofhalifax.com",
-    "phone": "",
-    "addressLine1": "300 Susie Lake Crescent",
-    "addressLine2": "",
-    "city": "Halifax",
-    "province": "NS",
-    "postalCode": "B3S 0G4",
-    "country": "Canada",
-    "paymentTerms": "Net 30",
-    "taxExempt": false,
-    "siteNotes": "Sage ID: AUTO-64 • 62 Sage invoices ($25,487.30 total, last: 2024-08-27)"
   },
   {
     "sageId": "SW",

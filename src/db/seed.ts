@@ -1,4 +1,4 @@
-import { count, eq, isNotNull } from "drizzle-orm";
+import { count, eq, inArray, isNotNull } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import sageCustomersJson from "./sage-customers.json";
@@ -781,15 +781,30 @@ interface RawSageCustomer {
   siteNotes: string;
 }
 
+const NULLED_DUPLICATE_SAGE_IDS = [
+  "AUTO-64",
+  "AUTO-306",
+  "AUTO-369",
+  "OldMicmac2",
+  "chii",
+  "AUTO-706",
+  "Old Micmac",
+];
+
 /**
- * Ensures all 808 Sage customers extracted from Giant Promotions' Sage Accounting
- * database (customers + sage_invoices) are present in the Giant OS customers table.
+ * Ensures all 801 Sage customers extracted from Giant Promotions' Sage Accounting
+ * database (excluding nulled duplicate rows) are present in the Giant OS customers table.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function ensureSageCustomersLoaded(db: PgDatabase<any, typeof schema>): Promise<{
   totalSageCustomers: number;
   newlyInserted: number;
 }> {
+  // Always remove any previously imported rows that were nulled out in Sage as duplicates
+  await db
+    .delete(schema.customers)
+    .where(inArray(schema.customers.sageId, NULLED_DUPLICATE_SAGE_IDS));
+
   const list = sageCustomersJson as RawSageCustomer[];
   const [{ value: existingSageCount }] = await db
     .select({ value: count() })
