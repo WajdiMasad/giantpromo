@@ -1,6 +1,7 @@
-import { count, eq } from "drizzle-orm";
+import { count, eq, isNotNull } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
+import sageCustomersJson from "./sage-customers.json";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>) {
@@ -760,4 +761,88 @@ export async function seedInitialDataIfEmpty(db: PgDatabase<any, typeof schema>)
       summary: "Job #232013 marked Installed (Steele Auto Group Fleet Van Wrap)",
     },
   ]);
+}
+
+interface RawSageCustomer {
+  sageId: string;
+  name: string;
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+  paymentTerms: string;
+  taxExempt: boolean;
+  siteNotes: string;
+}
+
+/**
+ * Ensures all 808 Sage customers extracted from Giant Promotions' Sage Accounting
+ * database (customers + sage_invoices) are present in the Giant OS customers table.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function ensureSageCustomersLoaded(db: PgDatabase<any, typeof schema>): Promise<{
+  totalSageCustomers: number;
+  newlyInserted: number;
+}> {
+  const list = sageCustomersJson as RawSageCustomer[];
+  const [{ value: existingSageCount }] = await db
+    .select({ value: count() })
+    .from(schema.customers)
+    .where(isNotNull(schema.customers.sageId));
+
+  if (existingSageCount >= list.length) {
+    return { totalSageCustomers: existingSageCount, newlyInserted: 0 };
+  }
+
+  const now = new Date();
+  const batchSize = 100;
+  let inserted = 0;
+
+  for (let i = 0; i < list.length; i += batchSize) {
+    const chunk = list.slice(i, i + batchSize).map((c) => ({
+      sageId: c.sageId,
+      name: c.name,
+      companyName: c.companyName || c.name,
+      contactPerson: c.contactPerson || "",
+      email: c.email || "",
+      phone: c.phone || "",
+      addressLine1: c.addressLine1 || "",
+      addressLine2: c.addressLine2 || "",
+      city: c.city || "",
+      province: c.province || "NS",
+      postalCode: c.postalCode || "",
+      country: c.country || "Canada",
+      paymentTerms: c.paymentTerms || "Net 30",
+      taxExempt: Boolean(c.taxExempt),
+      siteNotes: c.siteNotes || "",
+      isActive: true,
+      syncedAt: now,
+    }));
+
+    const res = await db
+      .insert(schema.customers)
+      .values(chunk)
+      .onConflictDoNothing({ target: schema.customers.sageId })
+      .returning({ id: schema.customers.id });
+
+    inserted += res.length;
+  }
+
+  if (inserted > 0) {
+    await db.insert(schema.activityLog).values({
+      actorName: "Sage Accounting Import",
+      entityType: "sage",
+      entityId: "customers",
+      action: "sage.customers_imported",
+      summary: `Imported ${inserted} commercial customer accounts from Sage Accounting (${list.length} total Sage contacts)`,
+    });
+  }
+
+  return { totalSageCustomers: list.length, newlyInserted: inserted };
 }

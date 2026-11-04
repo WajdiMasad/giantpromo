@@ -7,7 +7,7 @@ import { Pool } from "pg";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import { BOOTSTRAP_SQL } from "./bootstrap-sql";
-import { seedInitialDataIfEmpty } from "./seed";
+import { ensureSageCustomersLoaded, seedInitialDataIfEmpty } from "./seed";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AppDatabase = PgDatabase<any, typeof schema>;
@@ -30,6 +30,7 @@ async function createAndInitDatabase(): Promise<AppDatabase> {
     const db = drizzleNodePg(pool, { schema }) as unknown as AppDatabase;
     if (!isMemoryTest) {
       await seedInitialDataIfEmpty(db);
+      await ensureSageCustomersLoaded(db);
     }
     return db;
   }
@@ -48,6 +49,7 @@ async function createAndInitDatabase(): Promise<AppDatabase> {
   const db = drizzlePglite(client, { schema }) as unknown as AppDatabase;
   if (!isMemoryTest) {
     await seedInitialDataIfEmpty(db);
+    await ensureSageCustomersLoaded(db);
   }
   return db;
 }

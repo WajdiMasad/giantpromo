@@ -70,16 +70,36 @@ export function QuoteBuilderForm({
     customers.find((c) => c.id === initialCustomerId) ?? customers[0];
 
   const [customerId, setCustomerId] = useState<number>(initialCust?.id ?? 1);
+  const [customerSearch, setCustomerSearch] = useState("");
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === customerId) ?? customers[0],
     [customers, customerId]
   );
 
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers;
+    const matches = customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.companyName ?? "").toLowerCase().includes(q) ||
+        (c.email ?? "").toLowerCase().includes(q) ||
+        (c.city ?? "").toLowerCase().includes(q)
+    );
+    if (selectedCustomer && !matches.some((m) => m.id === selectedCustomer.id)) {
+      return [selectedCustomer, ...matches];
+    }
+    return matches;
+  }, [customers, customerSearch, selectedCustomer]);
+
   const [title, setTitle] = useState("");
   const [poReference, setPoReference] = useState("");
   const [siteAddress, setSiteAddress] = useState(
     initialCust
-      ? `${initialCust.addressLine1 ?? ""}, ${initialCust.city ?? "Halifax"}`
+      ? [initialCust.addressLine1, initialCust.city]
+          .map((s) => (s ?? "").trim())
+          .filter(Boolean)
+          .join(", ")
       : ""
   );
   const [siteProvince, setSiteProvince] = useState<string>(
@@ -220,7 +240,12 @@ export function QuoteBuilderForm({
     const cust = customers.find((c) => c.id === newId);
     if (cust) {
       setSiteProvince(cust.province || "NS");
-      setSiteAddress(`${cust.addressLine1 ?? ""}, ${cust.city ?? "Halifax"}`);
+      setSiteAddress(
+        [cust.addressLine1, cust.city]
+          .map((s) => (s ?? "").trim())
+          .filter(Boolean)
+          .join(", ")
+      );
     }
   }
 
@@ -310,12 +335,34 @@ export function QuoteBuilderForm({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label
-              htmlFor="quote-customer-select"
-              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5"
-            >
-              Customer (Synced from Sage)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="quote-customer-select"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-600"
+              >
+                Customer ({customers.length} Synced from Sage)
+              </label>
+              <input
+                type="text"
+                value={customerSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCustomerSearch(val);
+                  const q = val.trim().toLowerCase();
+                  if (q) {
+                    const firstMatch = customers.find(
+                      (c) =>
+                        c.name.toLowerCase().includes(q) ||
+                        (c.companyName ?? "").toLowerCase().includes(q) ||
+                        (c.email ?? "").toLowerCase().includes(q)
+                    );
+                    if (firstMatch) handleCustomerChange(firstMatch.id);
+                  }
+                }}
+                placeholder="Type to filter customers…"
+                className="rounded-xs border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs text-slate-800 focus:border-[#186ade] focus:bg-white focus:outline-none w-48"
+              />
+            </div>
             <select
               id="quote-customer-select"
               name="customerId"
@@ -323,7 +370,7 @@ export function QuoteBuilderForm({
               onChange={(e) => handleCustomerChange(Number(e.target.value))}
               className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900"
             >
-              {customers.map((c) => (
+              {filteredCustomers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.province})
                 </option>

@@ -3,6 +3,7 @@ import { asc } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/db";
 import { customers } from "@/db/schema";
+import { ensureSageCustomersLoaded } from "@/db/seed";
 import { QuoteBuilderForm } from "@/components/QuoteBuilderForm";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export default async function NewProjectPage({
   const requestedCustomerId = params.customerId ? Number(params.customerId) : undefined;
 
   const db = await getDb();
+  await ensureSageCustomersLoaded(db);
   const customerList = await db.select().from(customers).orderBy(asc(customers.name));
 
   return (
