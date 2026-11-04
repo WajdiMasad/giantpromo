@@ -8,12 +8,55 @@ export const PIPELINE: {
   label: string;
   chip: string; // tailwind classes for the chip/badge
   dot: string;
+  chevronBg: string; // Goodshuffle Pro pipeline chevron fill
+  chevronText: string;
+  tagColor: string; // Goodshuffle Pro tag icon color
 }[] = [
-  { key: "new", label: "New", chip: "bg-yellow-50 text-yellow-800 border-yellow-300", dot: "bg-yellow-400" },
-  { key: "quote_sent", label: "Quote Sent", chip: "bg-blue-50 text-blue-800 border-blue-300", dot: "bg-blue-500" },
-  { key: "action_needed", label: "Action Needed", chip: "bg-red-50 text-red-800 border-red-300", dot: "bg-red-500" },
-  { key: "signed", label: "Signed", chip: "bg-emerald-50 text-emerald-800 border-emerald-300", dot: "bg-emerald-500" },
-  { key: "lost", label: "Lost / Cancelled", chip: "bg-slate-100 text-slate-700 border-slate-300", dot: "bg-slate-500" },
+  {
+    key: "new",
+    label: "New",
+    chip: "bg-amber-50 text-amber-900 border-amber-300",
+    dot: "bg-amber-400",
+    chevronBg: "#f5c438",
+    chevronText: "#1e293b",
+    tagColor: "#eab308",
+  },
+  {
+    key: "quote_sent",
+    label: "Quote Sent",
+    chip: "bg-sky-50 text-sky-800 border-sky-300",
+    dot: "bg-sky-500",
+    chevronBg: "#2b7fff",
+    chevronText: "#ffffff",
+    tagColor: "#2563eb",
+  },
+  {
+    key: "action_needed",
+    label: "Action Needed",
+    chip: "bg-rose-50 text-rose-800 border-rose-300",
+    dot: "bg-rose-500",
+    chevronBg: "#e04a3f",
+    chevronText: "#ffffff",
+    tagColor: "#dc2626",
+  },
+  {
+    key: "signed",
+    label: "Signed",
+    chip: "bg-emerald-50 text-emerald-800 border-emerald-300",
+    dot: "bg-emerald-500",
+    chevronBg: "#1ca67a",
+    chevronText: "#ffffff",
+    tagColor: "#10b981",
+  },
+  {
+    key: "lost",
+    label: "Lost",
+    chip: "bg-slate-100 text-slate-700 border-slate-300",
+    dot: "bg-slate-500",
+    chevronBg: "#323a46",
+    chevronText: "#ffffff",
+    tagColor: "#64748b",
+  },
 ];
 
 export function pipelineOf(status: ProjectStatus): PipelineKey {
@@ -68,7 +111,7 @@ export const STAGE_STYLE: Record<string, string> = {
 /** What identifies the project to staff: the Sage job number once signed, else the Q-number. */
 export function projectRef(p: { jobNumber: string | null; quoteNumber: string; status: ProjectStatus }) {
   if (p.jobNumber) return `#${p.jobNumber}`;
-  if (isSigned(p.status)) return "⏳ Waiting for Sage #";
+  if (isSigned(p.status)) return "Pending #";
   return p.quoteNumber;
 }
 

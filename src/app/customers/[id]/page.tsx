@@ -1,19 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowLeft,
-  Building,
+  Building2,
   CheckCircle2,
-  Clock,
   ExternalLink,
-  FileText,
   Mail,
   MapPin,
   Phone,
   Plus,
-  Receipt,
-  Truck,
+  Tag,
+  User,
 } from "lucide-react";
 import { getDb } from "@/db";
 import {
@@ -25,7 +23,7 @@ import {
   projects,
 } from "@/db/schema";
 import { formatCAD } from "@/lib/money";
-import { PIPELINE, STAGE_LABEL, isSigned, pipelineOf, projectRef } from "@/lib/project-status";
+import { PIPELINE, STAGE_LABEL, pipelineOf, projectRef } from "@/lib/project-status";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +90,7 @@ export default async function CustomerDetailPage(props: {
   const outstandingBalanceCents = Math.max(0, totalBilledCents - totalPaidCents);
 
   const lifetimeSpendCents = customerProjects
-    .filter((p) => ["installed", "invoiced", "paid"].includes(p.status))
+    .filter((p) => ["approved", "scheduled", "in_progress", "installed", "invoiced", "paid"].includes(p.status))
     .reduce((a, p) => a + p.totalCents, 0);
 
   const activeJobs = customerProjects.filter((p) =>
@@ -104,485 +102,524 @@ export default async function CustomerDetailPage(props: {
 
   const activeTab = tabParam ?? "projects";
 
+  const TABS = [
+    { key: "projects", label: `PROJECTS & QUOTES (${customerProjects.length})` },
+    { key: "invoices", label: `INVOICES & PAYMENTS (${customerInvoices.length})` },
+    { key: "equipment", label: `ACTIVE RENTALS (${customerRentals.length})` },
+  ];
+
   return (
-    <div className="space-y-6">
-      {/* Back Link */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/customers"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
-        >
-          <ArrowLeft className="w-4 h-4" /> All customers
-        </Link>
-        <Link
-          href={`/projects/new?customerId=${customer.id}`}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4 text-amber-400" />
-          New Quote for {customer.name}
-        </Link>
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Goodshuffle Pro Full-Bleed Slate-Blue Account Header with Centered Folder Tabs */}
+      <div className="bg-[#2b3c4e] text-white px-6 pt-5 pb-0 shrink-0">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 pb-5">
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex items-center gap-2 text-xs text-slate-300 mb-1">
+                <Link
+                  href="/customers"
+                  className="inline-flex items-center gap-1 hover:text-white transition"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Directory
+                </Link>
+                <span>/</span>
+                <span className="tabular-nums">Account #{customer.id}</span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Building2 className="w-5 h-5 text-[#2b7fff] shrink-0" />
+                <h1 className="text-xl sm:text-2xl font-normal tracking-tight text-white">
+                  {customer.name}
+                </h1>
+              </div>
+
+              <div className="text-xs text-slate-300 flex flex-wrap items-center gap-2 pt-0.5">
+                <span>{customer.contactPerson || "Commercial Account"}</span>
+                <span>•</span>
+                <span>
+                  {customer.addressLine1}, {customer.city}, {customer.province} {customer.postalCode}
+                </span>
+                <span>•</span>
+                <span>Terms: {customer.paymentTerms || "Net 30"}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Link
+                href={`/projects/new?customerId=${customer.id}`}
+                className="inline-flex items-center gap-1.5 rounded-xs bg-[#186ade] hover:bg-[#1458b8] text-white font-semibold text-xs px-3.5 py-2 transition shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                New Project for {customer.name}
+              </Link>
+            </div>
+          </div>
+
+          {/* Centered Folder Tabs */}
+          <div className="flex items-end justify-center gap-1.5 overflow-x-auto">
+            {TABS.map((t) => {
+              const active = activeTab === t.key;
+              return (
+                <Link
+                  key={t.key}
+                  href={`/customers/${customer.id}?tab=${t.key}`}
+                  className={`px-6 py-2.5 text-xs font-bold tracking-wider uppercase rounded-t-xs transition whitespace-nowrap ${
+                    active
+                      ? "bg-white text-slate-800 border-t-2 border-[#186ade]"
+                      : "bg-[#22303f] hover:bg-[#34495e] text-slate-300 hover:text-white"
+                  }`}
+                >
+                  {t.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Customer Header Banner */}
-      <div className="rounded-3xl bg-slate-950 text-white p-6 sm:p-8 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                CLIENT #{customer.id}
-              </span>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                {customer.province} TAX RULES ({customer.taxExempt ? "TAX EXEMPT" : "STANDARD HST"})
-              </span>
+      {/* Full-Bleed White Account Summary Strip */}
+      <div className="bg-white border-b border-slate-200 px-6 py-3 shrink-0 shadow-2xs">
+        <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 text-xs">
+          <div className="py-1.5 sm:py-0 sm:pr-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Outstanding Balance
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-              {customer.name}
-            </h1>
-            {customer.companyName && customer.companyName !== customer.name && (
-              <div className="text-sm text-slate-400 flex items-center gap-1.5">
-                <Building className="w-3.5 h-3.5" />
-                {customer.companyName}
-              </div>
+            <div
+              className={`text-sm font-bold tabular-nums mt-0.5 ${
+                outstandingBalanceCents > 0 ? "text-rose-600" : "text-emerald-700"
+              }`}
+            >
+              {formatCAD(outstandingBalanceCents)}
+            </div>
+          </div>
+
+          <div className="py-1.5 sm:py-0 sm:px-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Lifetime Revenue
+            </div>
+            <div className="text-sm font-bold text-slate-800 tabular-nums mt-0.5">
+              {formatCAD(lifetimeSpendCents)}
+            </div>
+          </div>
+
+          <div className="py-1.5 sm:py-0 sm:px-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Active Jobs / Open Quotes
+            </div>
+            <div className="text-xs font-semibold text-slate-700 tabular-nums mt-0.5">
+              {activeJobs.length} Active • {openQuotes.length} Quotes
+            </div>
+          </div>
+
+          <div className="py-1.5 sm:py-0 sm:px-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Payment Terms
+            </div>
+            <div className="text-xs font-semibold text-slate-700 mt-0.5">
+              {customer.paymentTerms || "Net 30"}
+            </div>
+          </div>
+
+          <div className="py-1.5 sm:py-0 sm:pl-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Tax Jurisdiction
+            </div>
+            <div className="text-xs font-semibold text-slate-700 mt-0.5">
+              {customer.province} ({customer.taxExempt ? "Tax Exempt" : "Standard HST"})
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="p-6 max-w-7xl w-full mx-auto space-y-5">
+        {/* 3 Rectangular Account Info Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-xs bg-white border border-slate-200 p-4 shadow-2xs space-y-2 text-xs">
+            <div className="font-bold uppercase tracking-wider text-slate-500 text-[11px] border-b border-slate-100 pb-2 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-slate-400" /> Primary Contact
+            </div>
+            <div className="font-semibold text-slate-800 text-sm">
+              {customer.contactPerson || customer.name}
+            </div>
+            {customer.email && (
+              <a
+                href={`mailto:${customer.email}`}
+                className="flex items-center gap-1.5 text-[#186ade] hover:underline"
+              >
+                <Mail className="w-3.5 h-3.5 text-slate-400" /> {customer.email}
+              </a>
+            )}
+            {customer.phone && (
+              <a
+                href={`tel:${customer.phone}`}
+                className="flex items-center gap-1.5 text-slate-700 hover:underline tabular-nums"
+              >
+                <Phone className="w-3.5 h-3.5 text-slate-400" /> {customer.phone}
+              </a>
             )}
           </div>
 
-          {/* Quick Metrics Chips */}
-          <div className="flex flex-wrap sm:flex-col items-start sm:items-end gap-2 text-right">
-            <div className="bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-xl">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wider">Outstanding Balance</div>
-              <div
-                className={`text-lg font-bold font-mono ${
-                  outstandingBalanceCents > 0 ? "text-amber-400" : "text-emerald-400"
-                }`}
-              >
-                {formatCAD(outstandingBalanceCents)}
+          <div className="rounded-xs bg-white border border-slate-200 p-4 shadow-2xs space-y-2 text-xs">
+            <div className="font-bold uppercase tracking-wider text-slate-500 text-[11px] border-b border-slate-100 pb-2 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-slate-400" /> Billing Address
+            </div>
+            <div className="font-semibold text-slate-800">{customer.name}</div>
+            <div className="text-slate-600">{customer.addressLine1}</div>
+            <div className="text-slate-600">
+              {customer.city}, {customer.province} {customer.postalCode}
+            </div>
+          </div>
+
+          <div className="rounded-xs bg-white border border-slate-200 p-4 shadow-2xs space-y-2 text-xs">
+            <div className="font-bold uppercase tracking-wider text-slate-500 text-[11px] border-b border-slate-100 pb-2 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-slate-400" /> Installation &amp; Access Notes
+            </div>
+            {customer.siteNotes ? (
+              <p className="text-slate-700 leading-relaxed">{customer.siteNotes}</p>
+            ) : (
+              <p className="text-slate-400">No special site access notes recorded.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Tab 1: Projects & Quotes */}
+        {activeTab === "projects" && (
+          <div className="space-y-5">
+            {/* Active Jobs Table */}
+            <div className="rounded-xs bg-white border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="bg-[#f8fafc] border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Active Signed Jobs ({activeJobs.length})
+                </h2>
               </div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 px-3.5 py-1.5 rounded-xl text-xs">
-              <span className="text-slate-400">Lifetime Revenue: </span>
-              <strong className="text-white font-mono">{formatCAD(lifetimeSpendCents)}</strong>
-            </div>
-          </div>
-        </div>
 
-        {/* Contact Coordinates & Payment Terms */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-800/80 text-xs">
-          <div>
-            <div className="text-slate-400 uppercase tracking-wider text-[10px] font-semibold mb-0.5">
-              Contact Person
-            </div>
-            <div className="font-semibold text-slate-200">
-              {customer.contactPerson || "Primary Contact"}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-slate-400 uppercase tracking-wider text-[10px] font-semibold mb-0.5">
-              Email & Phone
-            </div>
-            <div className="space-y-0.5">
-              {customer.email ? (
-                <a href={`mailto:${customer.email}`} className="text-amber-400 hover:underline block truncate">
-                  {customer.email}
-                </a>
+              {activeJobs.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No active jobs currently in progress for {customer.name}.
+                </div>
               ) : (
-                <span className="text-slate-500">—</span>
-              )}
-              {customer.phone && (
-                <a href={`tel:${customer.phone}`} className="text-slate-300 hover:text-white block font-mono">
-                  {customer.phone}
-                </a>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                        <th className="py-2.5 px-4 border-r border-slate-200">Project &amp; Job #</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Site Location</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Stage</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Install Date</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200 text-right">Total</th>
+                        <th className="py-2.5 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {activeJobs.map((p) => {
+                        const pk = PIPELINE.find((x) => x.key === pipelineOf(p.status))!;
+                        return (
+                          <tr key={p.id} className="hover:bg-blue-50/30 transition">
+                            <td className="py-3 px-4 border-r border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <Tag
+                                  className="w-3.5 h-3.5 shrink-0 fill-current"
+                                  style={{ color: pk.tagColor }}
+                                />
+                                <Link
+                                  href={`/projects/${p.id}`}
+                                  className="font-semibold text-slate-800 hover:text-[#186ade] hover:underline"
+                                >
+                                  {p.title}{" "}
+                                  <span className="text-slate-400 font-normal tabular-nums">
+                                    ({projectRef(p)})
+                                  </span>
+                                </Link>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200 text-slate-600">
+                              {p.siteAddress || customer.addressLine1}
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200">
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {STAGE_LABEL[p.status] ?? pk.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200 tabular-nums text-slate-700">
+                              {p.scheduledDate || "Unscheduled"}
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200 text-right tabular-nums font-bold text-slate-900">
+                              {formatCAD(p.totalCents)}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Link
+                                href={`/projects/${p.id}`}
+                                className="rounded-xs border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+                              >
+                                View Job →
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
-          </div>
 
-          <div>
-            <div className="text-slate-400 uppercase tracking-wider text-[10px] font-semibold mb-0.5">
-              Billing Address
-            </div>
-            <div className="text-slate-300">
-              {customer.addressLine1 ? (
-                <>
-                  <div>{customer.addressLine1}</div>
-                  <div>
-                    {customer.city}, {customer.province} {customer.postalCode}
-                  </div>
-                </>
+            {/* Open Quotes Table */}
+            <div className="rounded-xs bg-white border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="bg-[#f8fafc] border-b border-slate-200 px-4 py-3">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Open Quotes &amp; Proposals ({openQuotes.length})
+                </h2>
+              </div>
+
+              {openQuotes.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No open proposals pending decision for {customer.name}.
+                </div>
               ) : (
-                <span className="text-slate-500">—</span>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                        <th className="py-2.5 px-4 border-r border-slate-200">Quote &amp; Title</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Status</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Valid Until</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200 text-right">Quote Total</th>
+                        <th className="py-2.5 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {openQuotes.map((q) => {
+                        const pk = PIPELINE.find((x) => x.key === pipelineOf(q.status))!;
+                        return (
+                          <tr key={q.id} className="hover:bg-blue-50/30 transition">
+                            <td className="py-3 px-4 border-r border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <Tag
+                                  className="w-3.5 h-3.5 shrink-0 fill-current"
+                                  style={{ color: pk.tagColor }}
+                                />
+                                <Link
+                                  href={`/projects/${q.id}`}
+                                  className="font-semibold text-slate-800 hover:text-[#186ade] hover:underline"
+                                >
+                                  {q.title}{" "}
+                                  <span className="text-slate-400 font-normal tabular-nums">
+                                    ({q.quoteNumber})
+                                  </span>
+                                </Link>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200">
+                              <span
+                                className="text-[11px] font-semibold px-2 py-0.5 rounded-xs"
+                                style={{ backgroundColor: pk.chevronBg, color: pk.chevronText }}
+                              >
+                                {pk.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200 tabular-nums text-slate-600">
+                              {q.validUntil || "—"}
+                            </td>
+                            <td className="py-3 px-4 border-r border-slate-200 text-right tabular-nums font-bold text-slate-900">
+                              {formatCAD(q.totalCents)}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                <a
+                                  href={`/q/${q.publicToken}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="rounded-xs border border-slate-300 bg-white hover:bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1"
+                                >
+                                  <ExternalLink className="w-3 h-3 text-[#186ade]" />
+                                  Portal
+                                </a>
+                                <Link
+                                  href={`/projects/${q.id}`}
+                                  className="rounded-xs bg-[#186ade] hover:bg-[#1458b8] text-white px-2.5 py-1 text-[11px] font-semibold"
+                                >
+                                  Open
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-slate-400 uppercase tracking-wider text-[10px] font-semibold mb-0.5">
-              Payment Terms
-            </div>
-            <div className="font-semibold text-slate-200">{customer.paymentTerms || "Net 30"}</div>
-          </div>
-        </div>
-
-        {/* Site & Access Notes */}
-        {customer.siteNotes && (
-          <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-xs text-slate-300 flex items-start gap-2">
-            <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-white">Installation & Site Access Notes: </strong>
-              {customer.siteNotes}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Tabs */}
-      <div className="border-b border-slate-200 flex gap-2">
-        {[
-          { key: "projects", label: `Projects & Quotes (${customerProjects.length})` },
-          { key: "invoices", label: `Invoices & Payments (${customerInvoices.length})` },
-          { key: "equipment", label: `Active Rentals & Fleet (${customerRentals.length})` },
-        ].map((t) => (
-          <Link
-            key={t.key}
-            href={`/customers/${customer.id}?tab=${t.key}`}
-            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
-              activeTab === t.key
-                ? "border-amber-500 text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Tab 1: Projects & Quotes */}
-      {activeTab === "projects" && (
-        <div className="space-y-6">
-          {/* Active Jobs Section */}
-          <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  Active Jobs ({activeJobs.length})
+        {/* Tab 2: Invoices & Payments */}
+        {activeTab === "invoices" && (
+          <div className="space-y-5">
+            <div className="rounded-xs bg-white border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="bg-[#f8fafc] border-b border-slate-200 px-4 py-3">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Invoices Ledger ({customerInvoices.length})
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Confirmed contracts currently in progress or awaiting installation/invoicing
-                </p>
               </div>
+
+              {customerInvoices.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No invoices issued to {customer.name} yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                        <th className="py-2.5 px-4 border-r border-slate-200">Invoice #</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Issue Date</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Due Date</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200">Status</th>
+                        <th className="py-2.5 px-4 border-r border-slate-200 text-right">Amount</th>
+                        <th className="py-2.5 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {customerInvoices.map((inv) => (
+                        <tr key={inv.id} className="hover:bg-blue-50/30">
+                          <td className="py-3 px-4 border-r border-slate-200 tabular-nums font-bold text-slate-900">
+                            #{inv.invoiceNumber}
+                          </td>
+                          <td className="py-3 px-4 border-r border-slate-200 tabular-nums text-slate-600">
+                            {inv.issueDate ?? "Draft"}
+                          </td>
+                          <td className="py-3 px-4 border-r border-slate-200 tabular-nums text-slate-600">
+                            {inv.dueDate ?? "—"}
+                          </td>
+                          <td className="py-3 px-4 border-r border-slate-200">
+                            <span
+                              className={`inline-flex text-[11px] font-bold uppercase px-2 py-0.5 rounded-xs border ${
+                                inv.status === "issued"
+                                  ? "bg-blue-50 text-[#186ade] border-blue-200"
+                                  : inv.status === "draft"
+                                    ? "bg-slate-100 text-slate-700 border-slate-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                              }`}
+                            >
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 border-r border-slate-200 tabular-nums font-bold text-slate-900 text-right">
+                            {formatCAD(inv.totalCents)}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {inv.projectId && (
+                              <Link
+                                href={`/projects/${inv.projectId}?tab=billing`}
+                                className="text-xs font-semibold text-[#186ade] hover:underline"
+                              >
+                                View Billing →
+                              </Link>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            {activeJobs.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No active jobs currently in progress for {customer.name}.
+            {/* Payments Received */}
+            <div className="rounded-xs bg-white border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="bg-[#f8fafc] border-b border-slate-200 px-4 py-3">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Payment History ({customerPayments.length})
+                </h2>
               </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {activeJobs.map((p) => {
-                  const pk = PIPELINE.find((x) => x.key === pipelineOf(p.status))!;
-                  return (
+
+              {customerPayments.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No payments recorded for this account.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200">
+                  {customerPayments.map((p) => (
                     <div
                       key={p.id}
-                      className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition"
+                      className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-slate-900 text-amber-400">
-                            {p.jobNumber ? `#${p.jobNumber}` : projectRef(p)}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border bg-white ${pk.chip}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${pk.dot}`} />
-                            {STAGE_LABEL[p.status] ?? pk.label}
-                          </span>
-                          {p.scheduledDate && (
-                            <span className="text-xs text-slate-500 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-slate-400" />
-                              Scheduled: {p.scheduledDate}
-                            </span>
-                          )}
+                      <div>
+                        <div className="font-semibold text-slate-900 tabular-nums">
+                          {formatCAD(p.amountCents)} received via {p.method.toUpperCase()}
                         </div>
-                        <h3 className="font-bold text-sm text-slate-900 truncate">
-                          {p.title}
-                        </h3>
-                        {p.siteAddress && (
-                          <div className="text-xs text-slate-500 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            {p.siteAddress}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
-                        <div className="text-right">
-                          <div className="font-bold font-mono text-sm text-slate-900">
-                            {formatCAD(p.totalCents)}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            Subtotal {formatCAD(p.subtotalCents)}
-                          </div>
-                        </div>
-                        <Link
-                          href={`/projects/${p.id}`}
-                          className="rounded-xl border border-slate-300 hover:bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-800 transition"
-                        >
-                          View Job →
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Open Quotes Section */}
-          <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  Open Quotes ({openQuotes.length})
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Proposals awaiting customer approval or requested revisions
-                </p>
-              </div>
-            </div>
-
-            {openQuotes.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No open proposals pending decision for {customer.name}.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {openQuotes.map((q) => {
-                  const pk = PIPELINE.find((x) => x.key === pipelineOf(q.status))!;
-                  return (
-                    <div
-                      key={q.id}
-                      className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                            {q.quoteNumber}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border bg-white ${pk.chip}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${pk.dot}`} />
-                            {pk.label}
-                          </span>
-                          {q.validUntil && (
-                            <span className="text-xs text-slate-500">
-                              Valid until: {q.validUntil}
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="font-bold text-sm text-slate-900 truncate">
-                          {q.title}
-                        </h3>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
-                        <div className="text-right">
-                          <div className="font-bold font-mono text-sm text-slate-900">
-                            {formatCAD(q.totalCents)}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={`/q/${q.publicToken}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-xl border border-slate-300 hover:bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-800 transition inline-flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3 text-slate-500" />
-                            Client Portal
-                          </a>
-                          <Link
-                            href={`/projects/${q.id}`}
-                            className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 text-xs font-semibold transition"
-                          >
-                            Details →
-                          </Link>
+                        <div className="text-slate-500 mt-0.5 tabular-nums">
+                          Received on {p.receivedOn} • {p.reference || "No reference"}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Invoices & Payments */}
-      {activeTab === "invoices" && (
-        <div className="space-y-6">
-          <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">
-                Invoices Ledger ({customerInvoices.length})
-              </h2>
-            </div>
-
-            {customerInvoices.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No invoices issued to {customer.name} yet.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      <th className="py-3 px-4">Invoice #</th>
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">Due Date</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {customerInvoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50/60">
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                          #{inv.invoiceNumber}
-                        </td>
-                        <td className="py-3.5 px-4 text-xs text-slate-600">
-                          {inv.issueDate ?? "Draft"}
-                        </td>
-                        <td className="py-3.5 px-4 text-xs text-slate-600">
-                          {inv.dueDate ?? "—"}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                              inv.status === "issued"
-                                ? "bg-purple-50 text-purple-700 border border-purple-200"
-                                : inv.status === "draft"
-                                ? "bg-slate-100 text-slate-700"
-                                : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}
-                          >
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-right">
-                          {formatCAD(inv.totalCents)}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          {inv.projectId && (
-                            <Link
-                              href={`/projects/${inv.projectId}?tab=billing`}
-                              className="text-xs font-semibold text-amber-600 hover:underline"
-                            >
-                              View Billing →
-                            </Link>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Payments Received */}
-          <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">
-                Payment History ({customerPayments.length})
-              </h2>
-            </div>
-
-            {customerPayments.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No payments recorded for this account.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {customerPayments.map((p) => (
-                  <div
-                    key={p.id}
-                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                  >
-                    <div>
-                      <div className="font-semibold text-slate-900 text-sm">
-                        {formatCAD(p.amountCents)} received via {p.method}
-                      </div>
-                      <div className="text-slate-500 mt-0.5">
-                        Received on {p.receivedOn} • {p.reference || "No reference"}
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 whitespace-nowrap">
-                      <CheckCircle2 className="w-3 h-3" /> Paid & Logged
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Active Rentals & Fleet */}
-      {activeTab === "equipment" && (
-        <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-4 sm:p-5 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">
-              Deployed Fleet Units ({customerRentals.length})
-            </h2>
-            <p className="text-xs text-slate-500">
-              Roadside signs, trailers, or event items stationed at this customer&apos;s properties
-            </p>
-          </div>
-
-          {customerRentals.length === 0 ? (
-            <div className="p-6 text-center text-xs text-slate-500">
-              No equipment currently deployed with {customer.name}.
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {customerRentals.map(({ rental, unit }) => (
-                <div
-                  key={rental.id}
-                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-black px-2 py-0.5 rounded bg-slate-900 text-amber-400">
-                        {unit.code}
-                      </span>
-                      <span className="font-bold text-slate-900 text-sm">{unit.name}</span>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {rental.status}
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xs border border-emerald-200 whitespace-nowrap">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Paid &amp; Logged
                       </span>
                     </div>
-                    <div className="text-xs text-slate-600 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      {rental.locationAddress}
-                    </div>
-                    <div className="text-xs text-slate-500 font-mono">
-                      Rental period: {rental.startDate} → {rental.endDate || "Ongoing Monthly"}
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="font-mono font-bold text-sm text-slate-900">
-                      {formatCAD(rental.monthlyRateCents)}/mo
-                    </div>
-                    <Link
-                      href="/equipment"
-                      className="text-xs font-semibold text-amber-600 hover:underline"
-                    >
-                      View on HRM Map →
-                    </Link>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+
+        {/* Tab 3: Active Rentals & Fleet */}
+        {activeTab === "equipment" && (
+          <div className="rounded-xs bg-white border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="bg-[#f8fafc] border-b border-slate-200 px-4 py-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                Deployed Fleet Units ({customerRentals.length})
+              </h2>
+            </div>
+
+            {customerRentals.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500">
+                No equipment currently deployed with {customer.name}.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                    <th className="py-2.5 px-4 border-r border-slate-200">Unit Code &amp; Name</th>
+                    <th className="py-2.5 px-4 border-r border-slate-200">Deployed Location</th>
+                    <th className="py-2.5 px-4 border-r border-slate-200">Lease Period</th>
+                    <th className="py-2.5 px-4 border-r border-slate-200">Status</th>
+                    <th className="py-2.5 px-4 text-right">Monthly Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {customerRentals.map(({ rental, unit }) => (
+                    <tr key={rental.id} className="hover:bg-blue-50/30">
+                      <td className="py-3 px-4 border-r border-slate-200 font-semibold text-slate-800">
+                        <span className="tabular-nums font-bold text-[#186ade] mr-1.5">
+                          {unit.code}
+                        </span>
+                        {unit.name}
+                      </td>
+                      <td className="py-3 px-4 border-r border-slate-200 text-slate-600">
+                        {rental.locationAddress}
+                      </td>
+                      <td className="py-3 px-4 border-r border-slate-200 tabular-nums text-slate-600">
+                        {rental.startDate} → {rental.endDate || "Ongoing Monthly"}
+                      </td>
+                      <td className="py-3 px-4 border-r border-slate-200">
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {rental.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums font-bold text-slate-900">
+                        {formatCAD(rental.monthlyRateCents)}/mo
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

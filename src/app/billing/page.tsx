@@ -121,91 +121,91 @@ export default async function BillingPage(props: {
     .orderBy(asc(customers.name));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-            Billing, Invoices & Receivables
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Goodshuffle Pro Top Bar */}
+      <div className="bg-white border-b border-slate-200 px-6 h-16 flex flex-wrap items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-normal text-slate-600 tracking-tight">
+            Billing &amp; Receivables
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Accounts receivable aging, customer payment logging (e-Transfer, Cheque, Stripe Card), and advance monthly lease billing
-          </p>
+        </div>
+
+        {/* Primary Navigation Tabs */}
+        <div className="flex items-center gap-1">
+          <Link
+            href="/billing?tab=invoices"
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xs transition ${
+              activeTab !== "recurring"
+                ? "bg-[#186ade] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Accounts Receivable &amp; Invoices ({invoiceRows.length})
+          </Link>
+          <Link
+            href="/billing?tab=recurring"
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xs transition ${
+              activeTab === "recurring"
+                ? "bg-[#186ade] text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Monthly Sign Leases ({planRows.length})
+          </Link>
         </div>
       </div>
 
-      {/* Primary Navigation Tabs */}
-      <div className="border-b border-slate-200 flex gap-2">
-        <Link
-          href="/billing?tab=invoices"
-          className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
-            activeTab !== "recurring"
-              ? "border-amber-500 text-slate-900"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Accounts Receivable &amp; Invoices ({invoiceRows.length})
-        </Link>
-        <Link
-          href="/billing?tab=recurring"
-          className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
-            activeTab === "recurring"
-              ? "border-amber-500 text-slate-900"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Monthly Sign Leases Runner ({planRows.length})
-        </Link>
-      </div>
-
       {/* Tab Content */}
-      {activeTab !== "recurring" ? (
-        <BillingLedgerClient invoices={invoiceRows} />
-      ) : (
-        <RecurringBillingClient
-          plans={planRows.map(({ plan, customer }) => ({
-            id: plan.id,
-            customerName: customer.name,
-            rentalId: plan.rentalId,
-            kind: plan.kind,
-            title: plan.title,
-            description: plan.description,
-            poReference: plan.poReference ?? "",
-            province: plan.province,
-            monthlyAmountCents: plan.monthlyAmountCents,
-            startDate: plan.startDate,
-            endDate: plan.endDate,
-            status: plan.status,
-          }))}
-          batches={batches.map((b) => ({
-            id: b.id,
-            monthKey: b.monthKey,
-            invoiceDate: b.invoiceDate,
-            status: b.status,
-            isDryRun: b.isDryRun,
-            approvedAt: b.approvedAt?.toISOString() ?? null,
-            executedAt: b.executedAt?.toISOString() ?? null,
-            items: batchItems
-              .filter((x) => x.item.batchId === b.id)
-              .map(({ item, customer, plan }) => ({
-                id: item.id,
-                planId: item.planId,
-                customerName: customer.name,
-                planKind: plan.kind,
-                description: item.description,
-                netCents: item.netCents,
-                taxCents: item.taxCents,
-                totalCents: item.totalCents,
-                isHalfMonthProrated: item.isHalfMonthProrated,
-                changeFlag: item.changeFlag,
-                skipThisMonth: item.skipThisMonth,
-                invoiceId: item.invoiceId,
-                invoiceNumber: item.invoiceNumber,
-                emailedAt: item.emailedAt?.toISOString() ?? null,
-              })),
-          }))}
-          customers={customerList}
-        />
-      )}
+      <div className="p-6 max-w-7xl w-full mx-auto">
+        {activeTab !== "recurring" ? (
+          <BillingLedgerClient invoices={invoiceRows} />
+        ) : (
+          <RecurringBillingClient
+            plans={planRows.map(({ plan, customer }) => ({
+              id: plan.id,
+              customerName: customer.name,
+              rentalId: plan.rentalId,
+              kind: plan.kind,
+              title: plan.title,
+              description: plan.description,
+              poReference: plan.poReference ?? "",
+              province: plan.province,
+              monthlyAmountCents: plan.monthlyAmountCents,
+              startDate: plan.startDate,
+              endDate: plan.endDate,
+              status: plan.status,
+            }))}
+            batches={batches.map((b) => ({
+              id: b.id,
+              monthKey: b.monthKey,
+              invoiceDate: b.invoiceDate,
+              status: b.status,
+              isDryRun: b.isDryRun,
+              approvedAt: b.approvedAt?.toISOString() ?? null,
+              executedAt: b.executedAt?.toISOString() ?? null,
+              items: batchItems
+                .filter((x) => x.item.batchId === b.id)
+                .map(({ item, customer, plan }) => ({
+                  id: item.id,
+                  planId: item.planId,
+                  customerName: customer.name,
+                  planKind: plan.kind,
+                  description: item.description,
+                  netCents: item.netCents,
+                  taxCents: item.taxCents,
+                  totalCents: item.totalCents,
+                  isHalfMonthProrated: item.isHalfMonthProrated,
+                  changeFlag: item.changeFlag,
+                  skipThisMonth: item.skipThisMonth,
+                  invoiceId: item.invoiceId,
+                  invoiceNumber: item.invoiceNumber,
+                  emailedAt: item.emailedAt?.toISOString() ?? null,
+                })),
+            }))}
+            customers={customerList}
+          />
+        )}
+      </div>
     </div>
   );
 }

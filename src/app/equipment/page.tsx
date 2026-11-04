@@ -35,35 +35,39 @@ export default async function EquipmentPage() {
     .orderBy(asc(customers.name));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Equipment Rentals, Booking Calendar & Live Map
-        </h1>
-        <p className="text-sm text-slate-600 mt-0.5">
-          Database-enforced double-booking protection. Returning an item automatically stops its monthly recurring billing plan.
-        </p>
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="bg-white border-b border-slate-200 px-6 h-16 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-normal text-slate-600 tracking-tight">
+            Inventory &amp; Fleet Map
+          </h1>
+          <span className="text-xs text-slate-400 border-l border-slate-200 pl-3 tabular-nums">
+            {equipmentList.length} Fleet Units • {rentalRows.length} Active Deployments
+          </span>
+        </div>
       </div>
 
-      <EquipmentClientView
-        equipmentList={equipmentList}
-        rentals={rentalRows.map(({ rental, equip, customer }) => ({
-          id: rental.id,
-          equipmentId: equip.id,
-          equipmentCode: equip.code,
-          equipmentName: equip.name,
-          customerName: customer.name,
-          startDate: rental.startDate,
-          endDate: rental.endDate,
-          monthlyRateCents: rental.monthlyRateCents,
-          locationAddress: rental.locationAddress,
-          lat: rental.lat ?? 44.668,
-          lng: rental.lng ?? -63.61,
-          status: rental.status,
-          notes: rental.notes ?? "",
-        }))}
-        customers={customerList}
-      />
+      <div className="p-6 max-w-7xl w-full mx-auto">
+        <EquipmentClientView
+          equipmentList={equipmentList}
+          rentals={rentalRows.map(({ rental, equip, customer }) => ({
+            id: rental.id,
+            equipmentId: equip.id,
+            equipmentCode: equip.code,
+            equipmentName: equip.name,
+            customerName: customer.name,
+            startDate: rental.startDate,
+            endDate: rental.endDate,
+            monthlyRateCents: rental.monthlyRateCents,
+            locationAddress: rental.locationAddress,
+            lat: rental.lat ?? 44.668,
+            lng: rental.lng ?? -63.61,
+            status: rental.status,
+            notes: rental.notes ?? "",
+          }))}
+          customers={customerList}
+        />
+      </div>
     </div>
   );
 }

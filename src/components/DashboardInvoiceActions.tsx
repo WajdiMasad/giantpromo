@@ -23,8 +23,8 @@ export function DashboardInvoiceActions({
 
   if (sentMsg) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
-        <CheckCircle2 className="w-4 h-4" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xs">
+        <CheckCircle2 className="w-3.5 h-3.5" />
         {sentMsg}
       </span>
     );
@@ -36,19 +36,19 @@ export function DashboardInvoiceActions({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-semibold px-3.5 py-2 transition"
+          className="inline-flex items-center gap-1.5 rounded-xs bg-[#186ade] hover:bg-[#1458b8] text-white text-xs font-semibold px-3 py-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
         >
-          <Send className="w-3.5 h-3.5 text-amber-400" />
+          <Send className="w-3 h-3" />
           Send Invoice #{invoiceNumber}
         </button>
       ) : (
-        <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-1.5 rounded-xs border border-slate-200">
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="customer@email.com"
-            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-900 w-52"
+            className="rounded-xs border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 w-44"
           />
           <button
             type="button"
@@ -63,18 +63,18 @@ export function DashboardInvoiceActions({
                 if (!res.ok) {
                   setErr(res.error);
                 } else {
-                  setSentMsg(`Sent #${res.invoiceNumber} to ${res.email}`);
+                  setSentMsg(`Sent #${res.invoiceNumber}`);
                 }
               });
             }}
-            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-3 py-1.5 disabled:opacity-50"
+            className="rounded-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-2.5 py-1 disabled:opacity-50 cursor-pointer"
           >
-            {isPending ? "Sending…" : `Confirm & Send (${totalFormatted})`}
+            {isPending ? "Sending…" : `Confirm (${totalFormatted})`}
           </button>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="text-xs text-slate-500 hover:text-slate-800 px-1.5"
+            className="text-xs text-slate-500 hover:text-slate-800 px-1 cursor-pointer"
           >
             Cancel
           </button>

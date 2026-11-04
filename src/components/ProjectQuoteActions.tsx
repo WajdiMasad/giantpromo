@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle2, Copy, ExternalLink, Send, XCircle, PenLine } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, Send, XCircle, PenLine, Mail } from "lucide-react";
 import {
   approveQuoteAction,
   markProjectLostAction,
@@ -39,23 +39,23 @@ export function ProjectQuoteActions({
   const isResend = status === "quote_sent" || status === "action_needed";
 
   return (
-    <div className="rounded-2xl bg-white border border-slate-200/90 p-5 shadow-xs space-y-4 print:hidden">
+    <div className="rounded-xs bg-white border border-slate-200 p-4 shadow-2xs space-y-3 print:hidden">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-bold text-slate-900">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
             {status === "new"
-              ? "This quote is a draft"
+              ? "Proposal Workflow — Draft Quote"
               : status === "action_needed"
-                ? "The client asked for changes"
-                : "Quote sent — waiting for the client"}
+                ? "Proposal Workflow — Client Requested Revisions"
+                : "Proposal Workflow — Sent & Awaiting Signature"}
           </div>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-slate-500 mt-0.5">
             {status === "new"
-              ? "Nothing has been shared with the client yet."
+              ? "Send proposal link to customer for online review and e-signature."
               : sentAt
                 ? `Last sent ${new Date(sentAt).toLocaleString("en-CA")}.`
                 : ""}{" "}
-            The Sage job number is created the moment the client signs.
+            Master job number is assigned automatically upon signature.
           </div>
         </div>
 
@@ -68,13 +68,13 @@ export function ProjectQuoteActions({
               startTransition(async () => {
                 const res = await sendQuoteToClientAction(projectId);
                 if (!res.ok) setError(res.error);
-                else setFeedback("Marked as sent. Copy the link or use Send via Gmail on the customer page.");
+                else setFeedback("Marked as sent. Share the client portal link or email via Gmail.");
               });
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-4 py-2.5 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xs bg-[#186ade] hover:bg-[#1458b8] text-white font-semibold text-xs px-3.5 py-2 whitespace-nowrap cursor-pointer shadow-2xs transition"
           >
             <Send className="w-3.5 h-3.5" />
-            {isResend ? "Re-send to client" : "Send to client"}
+            {isResend ? "Resend Proposal" : "Send Proposal"}
           </button>
           <button
             type="button"
@@ -83,9 +83,9 @@ export function ProjectQuoteActions({
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3.5 py-2.5 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xs border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs px-3 py-2 whitespace-nowrap cursor-pointer transition"
           >
-            <Copy className="w-3.5 h-3.5" /> {copied ? "Link copied" : "Copy client link"}
+            <Copy className="w-3.5 h-3.5 text-slate-500" /> {copied ? "Link Copied" : "Copy Link"}
           </button>
           <button
             type="button"
@@ -103,49 +103,49 @@ export function ProjectQuoteActions({
                 );
               window.open(url, "_blank", "noopener");
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3.5 py-2.5 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xs border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs px-3 py-2 whitespace-nowrap cursor-pointer transition"
           >
-            Email via Gmail
+            <Mail className="w-3.5 h-3.5 text-slate-500" /> Email via Gmail
           </button>
           <Link
             href={`/q/${publicToken}`}
             target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs px-3.5 py-2.5 whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 rounded-xs border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs px-3 py-2 whitespace-nowrap transition"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-amber-600" /> View as client
+            <ExternalLink className="w-3.5 h-3.5 text-[#186ade]" /> Preview Portal
           </Link>
           <button
             type="button"
             onClick={() => setMode(mode === "sign" ? null : "sign")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-semibold text-xs px-3.5 py-2.5 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xs border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs px-3 py-2 whitespace-nowrap cursor-pointer transition"
           >
-            <PenLine className="w-3.5 h-3.5" /> Mark signed
+            <PenLine className="w-3.5 h-3.5" /> Record Offline Signature
           </button>
           <button
             type="button"
             onClick={() => setMode(mode === "lost" ? null : "lost")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs px-3.5 py-2.5 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xs border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs px-3 py-2 whitespace-nowrap cursor-pointer transition"
           >
-            <XCircle className="w-3.5 h-3.5" /> Mark lost
+            <XCircle className="w-3.5 h-3.5" /> Mark Lost
           </button>
         </div>
       </div>
 
       {feedback && (
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2 text-xs font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" /> {feedback}
+        <div className="rounded-xs bg-emerald-50 border border-emerald-200 text-emerald-900 px-3.5 py-2 text-xs font-semibold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> {feedback}
         </div>
       )}
       {error && (
-        <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2 text-xs font-semibold">
+        <div className="rounded-xs bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2 text-xs font-semibold">
           {error}
         </div>
       )}
 
       {mode === "sign" && (
-        <div className="rounded-xl bg-emerald-50/60 border border-emerald-200 p-4 space-y-2">
+        <div className="rounded-xs bg-emerald-50/60 border border-emerald-200 p-3.5 space-y-2">
           <div className="text-xs font-bold text-emerald-900">
-            Record an approval received by phone or email. This creates the job and its Sage number right away.
+            Record an approval received by phone or PO. Assigns the next sequential job number immediately.
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <label htmlFor="manual-signer" className="sr-only">
@@ -155,8 +155,8 @@ export function ProjectQuoteActions({
               id="manual-signer"
               value={signer}
               onChange={(e) => setSigner(e.target.value)}
-              placeholder="Name of the person who approved"
-              className="flex-1 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs text-slate-900"
+              placeholder="Approving contact full name"
+              className="flex-1 rounded-xs border border-emerald-300 bg-white px-3 py-1.5 text-xs text-slate-900"
             />
             <button
               type="button"
@@ -169,19 +169,19 @@ export function ProjectQuoteActions({
                     approvedByName: signer,
                   });
                   if (!res.ok) setError(res.error);
-                })
+                });
               }}
-              className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+              className="rounded-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-1.5 disabled:opacity-50 whitespace-nowrap cursor-pointer"
             >
-              Confirm signed &amp; create job
+              Confirm Signed &amp; Assign Job #
             </button>
           </div>
         </div>
       )}
 
       {mode === "lost" && (
-        <div className="rounded-xl bg-rose-50/60 border border-rose-200 p-4 space-y-2">
-          <div className="text-xs font-bold text-rose-900">Why was this quote lost? (kept for your records)</div>
+        <div className="rounded-xs bg-rose-50/60 border border-rose-200 p-3.5 space-y-2">
+          <div className="text-xs font-bold text-rose-900">Reason quote was lost or cancelled:</div>
           <div className="flex flex-col sm:flex-row gap-2">
             <label htmlFor="lost-reason" className="sr-only">
               Reason lost
@@ -190,8 +190,8 @@ export function ProjectQuoteActions({
               id="lost-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. went with another shop, project cancelled"
-              className="flex-1 rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs text-slate-900"
+              placeholder="e.g. Budget constraints, event postponed"
+              className="flex-1 rounded-xs border border-rose-300 bg-white px-3 py-1.5 text-xs text-slate-900"
             />
             <button
               type="button"
@@ -203,9 +203,9 @@ export function ProjectQuoteActions({
                   if (!res.ok) setError(res.error);
                 });
               }}
-              className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+              className="rounded-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs px-4 py-1.5 disabled:opacity-50 whitespace-nowrap cursor-pointer"
             >
-              Confirm lost
+              Confirm Lost
             </button>
           </div>
         </div>

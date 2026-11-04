@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { asc } from "drizzle-orm";
+import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/db";
 import { customers } from "@/db/schema";
 import { QuoteBuilderForm } from "@/components/QuoteBuilderForm";
@@ -17,16 +19,25 @@ export default async function NewProjectPage({
   const customerList = await db.select().from(customers).orderBy(asc(customers.name));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">New project</h1>
-        <p className="text-sm text-slate-600 mt-0.5">
-          Pick a customer and add line items (the built-in Vinyl / Banner / Corex calculator helps price signs).
-          Save it as a draft, or mark it sent to the client. It becomes a Sage-numbered job the moment they sign.
-        </p>
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="bg-white border-b border-slate-200 px-6 h-16 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/projects"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Projects
+          </Link>
+          <span className="text-slate-300">/</span>
+          <h1 className="text-xl font-normal text-slate-600 tracking-tight">
+            Create New Project
+          </h1>
+        </div>
       </div>
 
-      <QuoteBuilderForm customers={customerList} initialCustomerId={requestedCustomerId} />
+      <div className="p-6 max-w-7xl w-full mx-auto">
+        <QuoteBuilderForm customers={customerList} initialCustomerId={requestedCustomerId} />
+      </div>
     </div>
   );
 }

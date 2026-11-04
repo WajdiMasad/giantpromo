@@ -32,17 +32,15 @@ export default async function InstallerPortalPage() {
       const assignedIds = allAssignments
         .filter((a) => a.jobId === job.id)
         .map((a) => a.userId);
-      // Show if assigned to this installer (or if unassigned so crew leads can pick it up)
       return assignedIds.length === 0 || assignedIds.includes(user.id);
     }
     return true;
   });
 
-  // Sort active & rush jobs above already-installed jobs
   const statusWeight = (status: string, priority: string) => {
     if (status === "in_progress") return priority === "rush" ? 0 : 1;
     if (status === "scheduled" || status === "approved") return priority === "rush" ? 2 : 3;
-    return 10; // installed jobs go below active installs
+    return 10;
   };
 
   const today = new Date().toISOString().slice(0, 10);
@@ -62,38 +60,46 @@ export default async function InstallerPortalPage() {
     );
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="rounded-3xl bg-slate-950 text-white p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3.5">
-          <div className="h-12 w-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
-            <HardHat className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">Installer Field View (PWA)</h1>
-            <p className="text-xs text-slate-400">
-              {user?.name} • Tap address for turn-by-turn directions, upload install photos & mark complete
-            </p>
-          </div>
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="bg-white border-b border-slate-200 px-6 h-16 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <HardHat className="w-5 h-5 text-[#186ade]" />
+          <h1 className="text-xl font-normal text-slate-600 tracking-tight">
+            Crew Schedule &amp; Field Dispatch
+          </h1>
         </div>
-        <div className="flex sm:flex-col items-center sm:items-end justify-between border-t sm:border-t-0 border-slate-800 pt-2.5 sm:pt-0">
-          <div className="text-xs text-slate-400">Today&apos;s Dispatch</div>
-          <div className="font-mono text-sm font-bold text-amber-400 whitespace-nowrap">
-            {today}
-          </div>
+        <div className="text-xs font-semibold text-slate-600 tabular-nums">
+          Dispatch Date: {today}
         </div>
       </div>
 
-      {/* Today's Schedule */}
-      <div className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 px-1">
-          Today&apos;s Installs ({todayJobs.length})
-        </h2>
-        {todayJobs.length === 0 ? (
-          <div className="rounded-2xl bg-white border border-slate-200 p-6 text-center text-sm text-slate-500">
-            No jobs scheduled for today ({today}).
-          </div>
-        ) : (
-          todayJobs.map(({ job, customer }) => (
+      <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
+        <div className="space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+            Today&apos;s Installations ({todayJobs.length})
+          </h2>
+          {todayJobs.length === 0 ? (
+            <div className="rounded-xs bg-white border border-slate-200 p-6 text-center text-xs text-slate-500">
+              No jobs scheduled for today ({today}).
+            </div>
+          ) : (
+            todayJobs.map(({ job, customer }) => (
+              <InstallerJobCard
+                key={job.id}
+                job={job}
+                customer={customer}
+                items={allItems.filter((i) => i.jobId === job.id)}
+                photoCount={allFiles.filter((f) => f.jobId === job.id).length}
+              />
+            ))
+          )}
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+            Upcoming &amp; Scheduled ({upcomingJobs.length})
+          </h2>
+          {upcomingJobs.map(({ job, customer }) => (
             <InstallerJobCard
               key={job.id}
               job={job}
@@ -101,24 +107,8 @@ export default async function InstallerPortalPage() {
               items={allItems.filter((i) => i.jobId === job.id)}
               photoCount={allFiles.filter((f) => f.jobId === job.id).length}
             />
-          ))
-        )}
-      </div>
-
-      {/* Upcoming Schedule */}
-      <div className="space-y-3 pt-2">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 px-1">
-          Upcoming & Scheduled ({upcomingJobs.length})
-        </h2>
-        {upcomingJobs.map(({ job, customer }) => (
-          <InstallerJobCard
-            key={job.id}
-            job={job}
-            customer={customer}
-            items={allItems.filter((i) => i.jobId === job.id)}
-            photoCount={allFiles.filter((f) => f.jobId === job.id).length}
-          />
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

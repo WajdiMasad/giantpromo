@@ -5,14 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Briefcase,
-  Signpost,
-  Repeat,
+  FolderKanban,
+  Package,
   Users,
+  CreditCard,
+  FileSpreadsheet,
   HardHat,
-  Sparkles,
   Plus,
-  Receipt,
+  ChevronDown,
 } from "lucide-react";
 import { switchActiveUserAction } from "@/app/actions";
 import type { SessionUser } from "@/lib/auth";
@@ -51,79 +51,75 @@ export function AppShell({
       href: "/projects",
       label: "Projects",
       shortLabel: "Projects",
-      icon: Briefcase,
-      badge: readyToSendCount > 0 ? `${readyToSendCount} to invoice` : undefined,
+      icon: FolderKanban,
+      badge: readyToSendCount > 0 ? String(readyToSendCount) : undefined,
       roles: ["admin", "office", "accountant"],
     },
     {
-      href: "/installer",
-      label: "Installer Today View",
-      shortLabel: "Installer",
-      icon: HardHat,
+      href: "/equipment",
+      label: "Inventory",
+      shortLabel: "Inventory",
+      icon: Package,
       roles: ["admin", "office", "installer"],
     },
     {
-      href: "/equipment",
-      label: "Equipment & Map",
-      shortLabel: "Rentals",
-      icon: Signpost,
-      roles: ["admin", "office", "installer"],
+      href: "/customers",
+      label: "Directory",
+      shortLabel: "Directory",
+      icon: Users,
+      roles: ["admin", "office", "accountant"],
     },
     {
       href: "/billing",
-      label: "Recurring Billing",
+      label: "Billing",
       shortLabel: "Billing",
-      icon: Repeat,
+      icon: CreditCard,
       roles: ["admin", "office", "accountant"],
     },
     {
       href: "/accounting",
       label: "Accounting",
-      shortLabel: "Books",
-      icon: Receipt,
+      shortLabel: "Accounting",
+      icon: FileSpreadsheet,
       roles: ["admin", "accountant"],
     },
     {
-      href: "/customers",
-      label: "Customers",
-      shortLabel: "Clients",
-      icon: Users,
-      roles: ["admin", "office", "accountant"],
+      href: "/installer",
+      label: "Crew Schedule",
+      shortLabel: "Crew",
+      icon: HardHat,
+      roles: ["admin", "office", "installer"],
     },
   ].filter((item) => item.roles.includes(currentUser.role));
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:w-72 lg:flex-col lg:fixed lg:inset-y-0 bg-slate-950 text-slate-100 border-r border-slate-800 z-30">
-        <div className="p-6 border-b border-slate-800/80">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-lg shadow-lg shadow-amber-500/20">
-              GP
-            </div>
-            <div>
-              <div className="font-bold tracking-tight text-white text-base leading-tight">
-                GIANT PROMOTIONS
-              </div>
-              <div className="text-xs text-slate-400 font-medium">
-                Halifax Sign & Rental OS
-              </div>
-            </div>
-          </div>
+  const initials = currentUser.name
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
-          <div className="mt-4">
-            <Link
-              href="/projects/new"
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm py-2.5 px-4 transition shadow-sm"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              New Project
-            </Link>
+  return (
+    <div className="min-h-screen bg-[#eef1f6] text-slate-800 flex flex-col lg:flex-row">
+      {/* Goodshuffle Pro-style Deep Navy Sidebar */}
+      <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:fixed lg:inset-y-0 bg-[#082347] text-white z-30 select-none shadow-md">
+        {/* Top Brand Bar */}
+        <div className="h-16 px-4 flex items-center gap-2.5 border-b border-white/10 shrink-0">
+          <div className="h-7 w-7 rounded-xs bg-[#186ade] text-white font-bold flex items-center justify-center text-xs tracking-tighter shadow-xs">
+            GP
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold tracking-wider text-white text-[13px] leading-none truncate">
+              GIANT PROMOTIONS
+            </div>
+            <div className="text-[10px] text-[#8fa8c8] tracking-wide mt-0.5 truncate">
+              PRO INVENTORY &amp; JOBS
+            </div>
           </div>
         </div>
 
-        {/* Navigation Links */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {/* Primary Navigation */}
+        <nav className="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active =
@@ -134,18 +130,28 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+                className={`flex items-center justify-between gap-2.5 px-3 py-2 rounded-xs text-[13px] transition ${
                   active
-                    ? "bg-slate-800/90 text-amber-400 shadow-inner border border-slate-700/70"
-                    : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                    ? "bg-[#186ade] text-white font-semibold shadow-2xs"
+                    : "text-[#b4c6e0] hover:bg-white/8 hover:text-white font-medium"
                 }`}
               >
-                <span className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${active ? "text-amber-400" : "text-slate-400"}`} />
-                  {item.label}
+                <span className="flex items-center gap-2.5 truncate">
+                  <Icon
+                    className={`w-4 h-4 shrink-0 ${
+                      active ? "text-white" : "text-[#7c97bd]"
+                    }`}
+                  />
+                  <span className="truncate">{item.label}</span>
                 </span>
                 {item.badge && (
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.2 rounded-xs tabular-nums ${
+                      active
+                        ? "bg-white text-[#186ade]"
+                        : "bg-[#186ade]/40 text-white"
+                    }`}
+                  >
                     {item.badge}
                   </span>
                 )}
@@ -154,63 +160,60 @@ export function AppShell({
           })}
         </nav>
 
-        {/* Next invoice number (the app owns numbering) */}
-        <div className="p-4 m-3 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Next invoice / job #
-          </div>
-          <div className="font-mono text-lg font-bold text-white">#{nextInvoiceNumber}</div>
-          <div className="text-[11px] text-slate-400 leading-relaxed">
-            Assigned the moment a quote is signed. Numbers never repeat or skip.
-          </div>
-        </div>
-
-        {/* User / Role Switcher Footer (pb-12 keeps clear of Next DevTools badge) */}
-        <div className="p-4 pb-12 border-t border-slate-800/80 bg-slate-950/60">
-          <label
-            htmlFor="sidebar-staff-switcher"
-            className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5 cursor-pointer"
+        {/* Bottom Action & Quiet Account Switcher */}
+        <div className="p-3 space-y-2.5 border-t border-white/10 bg-[#061b38]">
+          <Link
+            href="/projects/new"
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-xs bg-[#186ade] hover:bg-[#1458b8] text-white font-semibold text-xs py-2 px-3 transition shadow-xs"
           >
-            <Sparkles className="w-3 h-3 text-amber-400" />
-            Active Staff Account
-          </label>
-          <form action={switchActiveUserAction} className="space-y-2">
-            <select
-              id="sidebar-staff-switcher"
-              name="userId"
-              defaultValue={currentUser.id}
-              onChange={(e) => e.currentTarget.form?.requestSubmit()}
-              aria-label="Switch active staff role"
-              className="w-full rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 px-2.5 py-2 focus:outline-none focus:border-amber-400"
-            >
-              {allUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.role.toUpperCase()})
-                </option>
-              ))}
-            </select>
-          </form>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-            <span className="truncate">{currentUser.email}</span>
-            <span className="uppercase font-semibold text-amber-400">{currentUser.role}</span>
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            Create New Project
+          </Link>
+
+          <div className="pt-1">
+            <form action={switchActiveUserAction} className="relative">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-xs bg-white/5 hover:bg-white/10 transition border border-white/10">
+                <div className="w-6 h-6 rounded-full bg-[#186ade] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                  {initials}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <select
+                    id="sidebar-staff-switcher"
+                    name="userId"
+                    defaultValue={currentUser.id}
+                    onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                    aria-label="Switch active staff role"
+                    className="w-full bg-transparent text-white text-xs font-medium focus:outline-none cursor-pointer truncate appearance-none pr-4"
+                  >
+                    {allUsers.map((u) => (
+                      <option key={u.id} value={u.id} className="text-slate-900">
+                        {u.name} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-[#8fa8c8] pointer-events-none shrink-0" />
+              </div>
+            </form>
+            <div className="mt-1.5 px-1 flex items-center justify-between text-[10px] text-[#7c97bd] tabular-nums">
+              <span>Halifax Depot</span>
+              <span>Next Job #{nextInvoiceNumber}</span>
+            </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 lg:pl-72 flex flex-col min-h-screen pb-20 lg:pb-0">
+      {/* Main Content Area (Full-bleed workspace) */}
+      <div className="flex-1 lg:pl-56 flex flex-col min-h-screen min-w-0 pb-16 lg:pb-0">
         {/* Mobile Top Header */}
-        <header className="lg:hidden bg-slate-950 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 sticky top-0 z-20">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-amber-500 text-slate-950 font-black flex items-center justify-center text-sm">
+        <header className="lg:hidden bg-[#082347] text-white px-4 h-14 flex items-center justify-between border-b border-white/10 sticky top-0 z-20">
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-6 rounded-xs bg-[#186ade] text-white font-bold flex items-center justify-center text-xs">
               GP
             </div>
-            <div>
-              <div className="font-bold text-sm leading-tight">Giant Promotions</div>
-              <div className="text-[11px] text-slate-400">
-                Next invoice #{nextInvoiceNumber}
-              </div>
-            </div>
+            <span className="font-bold text-xs tracking-wider uppercase">
+              Giant Promotions
+            </span>
           </div>
 
           <form action={switchActiveUserAction}>
@@ -220,10 +223,10 @@ export function AppShell({
               defaultValue={currentUser.id}
               onChange={(e) => e.currentTarget.form?.requestSubmit()}
               aria-label="Switch user role"
-              className="rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 px-2 py-1.5"
+              className="rounded-xs bg-white/10 border border-white/15 text-xs text-white px-2 py-1"
             >
               {allUsers.map((u) => (
-                <option key={u.id} value={u.id}>
+                <option key={u.id} value={u.id} className="text-slate-900">
                   {u.name.split(" ")[0]} ({u.role})
                 </option>
               ))}
@@ -231,13 +234,11 @@ export function AppShell({
           </form>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {children}
-        </main>
+        <main className="flex-1 flex flex-col min-w-0">{children}</main>
       </div>
 
-      {/* Mobile PWA Bottom Navigation (includes Installer & Clients) */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-slate-950 text-slate-300 border-t border-slate-800 flex items-center justify-around py-2 px-1 z-30 overflow-x-auto">
+      {/* Mobile Bottom Bar */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-[#082347] text-white border-t border-white/10 flex items-center justify-around py-1.5 px-1 z-30 overflow-x-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active =
@@ -248,8 +249,8 @@ export function AppShell({
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition shrink-0 ${
-                active ? "text-amber-400 bg-slate-900" : "text-slate-400 hover:text-slate-200"
+              className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xs text-[10px] font-medium transition shrink-0 ${
+                active ? "bg-[#186ade] text-white" : "text-[#b4c6e0]"
               }`}
             >
               <Icon className="w-4 h-4" />
