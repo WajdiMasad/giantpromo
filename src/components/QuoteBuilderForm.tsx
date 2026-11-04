@@ -59,9 +59,13 @@ const DEFAULT_SAMPLE_DESC =
 export function QuoteBuilderForm({
   customers,
   initialCustomerId,
+  initialTitle,
+  initialLines,
 }: {
   customers: CustomerRow[];
   initialCustomerId?: number;
+  initialTitle?: string;
+  initialLines?: Line[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -92,7 +96,7 @@ export function QuoteBuilderForm({
     return matches;
   }, [customers, customerSearch, selectedCustomer]);
 
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialTitle ?? "");
   const [poReference, setPoReference] = useState("");
   const [siteAddress, setSiteAddress] = useState(
     initialCust
@@ -114,14 +118,18 @@ export function QuoteBuilderForm({
   );
 
   const sendIntent = useRef(false);
-  const [lines, setLines] = useState<Line[]>([
-    {
-      description: DEFAULT_SAMPLE_DESC,
-      quantity: "1",
-      unitPriceDollars: "450.00",
-      taxExempt: false,
-    },
-  ]);
+  const [lines, setLines] = useState<Line[]>(
+    initialLines && initialLines.length > 0
+      ? initialLines
+      : [
+          {
+            description: DEFAULT_SAMPLE_DESC,
+            quantity: "1",
+            unitPriceDollars: "450.00",
+            taxExempt: false,
+          },
+        ]
+  );
 
   // Built-in Quick Sign & Material Calculator Drawer
   const [showCalc, setShowCalc] = useState(false);

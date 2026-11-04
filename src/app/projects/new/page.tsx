@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/db";
 import { customers } from "@/db/schema";
 import { ensureSageCustomersLoaded } from "@/db/seed";
+import { getHistoricalInvoiceByNumber } from "@/lib/sage-archive";
+import { centsToDecimalString } from "@/lib/money";
 import { QuoteBuilderForm } from "@/components/QuoteBuilderForm";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function NewProjectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ customerId?: string }>;
+  searchParams: Promise<{ customerId?: string; fromSageInvoice?: string }>;
 }) {
   const params = await searchParams;
   const requestedCustomerId = params.customerId ? Number(params.customerId) : undefined;
@@ -19,6 +21,31 @@ export default async function NewProjectPage({
   const db = await getDb();
   await ensureSageCustomersLoaded(db);
   const customerList = await db.select().from(customers).orderBy(asc(customers.name));
+
+  const sourceInvoice = params.fromSageInvoice
+    ? getHistoricalInvoiceByNumber(params.fromSageInvoice)
+    : undefined;
+
+  const matchedCustomerId =
+    requestedCustomerId ??
+    (sourceInvoice
+      ? customerList.find((c) => c.sageId === sourceInvoice.customerSageId)?.id
+      : undefined);
+
+  const initialTitle = sourceInvoice
+    ? sourceInvoice.lines[0]?.description?.slice(0, 80) ||
+      `Repeat of Invoice #${sourceInvoice.invoiceNumber}`
+    : undefined;
+
+  const initialLines =
+    sourceInvoice && sourceInvoice.lines.length > 0
+      ? sourceInvoice.lines.map((l) => ({
+          description: l.description,
+          quantity: String(l.quantity),
+          unitPriceDollars: centsToDecimalString(l.unitPriceCents),
+          taxExempt: false,
+        }))
+      : undefined;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -32,13 +59,20 @@ export default async function NewProjectPage({
           </Link>
           <span className="text-slate-300">/</span>
           <h1 className="text-xl font-normal text-slate-600 tracking-tight">
-            Create New Project
+            {sourceInvoice
+              ? `Re-Quote Past Job #${sourceInvoice.invoiceNumber}`
+              : "Create New Project"}
           </h1>
         </div>
       </div>
 
       <div className="p-6 max-w-7xl w-full mx-auto">
-        <QuoteBuilderForm customers={customerList} initialCustomerId={requestedCustomerId} />
+        <QuoteBuilderForm
+          customers={customerList}
+          initialCustomerId={matchedCustomerId}
+          initialTitle={initialTitle}
+          initialLines={initialLines}
+        />
       </div>
     </div>
   );

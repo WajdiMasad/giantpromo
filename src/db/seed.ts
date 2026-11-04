@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import sageCustomersJson from "./sage-customers.json";
@@ -841,7 +841,12 @@ export async function ensureSageCustomersLoaded(db: PgDatabase<any, typeof schem
       const res = await db
         .insert(schema.customers)
         .values(chunk)
-        .onConflictDoNothing({ target: schema.customers.sageId })
+        .onConflictDoUpdate({
+          target: schema.customers.sageId,
+          set: {
+            siteNotes: sql`excluded.site_notes`,
+          },
+        })
         .returning({ id: schema.customers.id });
 
       inserted += res.length;

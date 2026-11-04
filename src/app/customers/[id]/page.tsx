@@ -24,6 +24,8 @@ import {
 } from "@/db/schema";
 import { formatCAD } from "@/lib/money";
 import { PIPELINE, STAGE_LABEL, pipelineOf, projectRef } from "@/lib/project-status";
+import { getHistoricalInvoicesForCustomer } from "@/lib/sage-archive";
+import { CustomerHistoricalJobsSection } from "@/components/CustomerHistoricalJobsSection";
 
 export const dynamic = "force-dynamic";
 
@@ -82,16 +84,29 @@ export default async function CustomerDetailPage(props: {
     .where(eq(equipmentRentals.customerId, customerId))
     .orderBy(desc(equipmentRentals.startDate));
 
+  // 5. Fetch historical Sage jobs & invoices for this customer
+  const historicalSageInvoices = getHistoricalInvoicesForCustomer(customer);
+  const sageLifetimeCents = historicalSageInvoices
+    .filter((i) => i.status !== "VOID")
+    .reduce((sum, i) => sum + i.totalCents, 0);
+  const sageUnpaidCents = historicalSageInvoices
+    .filter((i) => i.status === "UNPAID" || i.status === "PART_PAID")
+    .reduce((sum, i) => sum + i.totalCents, 0);
+
   // Financial aggregates
   const totalPaidCents = customerPayments.reduce((a, p) => a + p.amountCents, 0);
   const totalBilledCents = customerInvoices
     .filter((i) => i.status === "issued")
     .reduce((a, i) => a + i.totalCents, 0);
-  const outstandingBalanceCents = Math.max(0, totalBilledCents - totalPaidCents);
+  const outstandingBalanceCents =
+    Math.max(0, totalBilledCents - totalPaidCents) + sageUnpaidCents;
 
-  const lifetimeSpendCents = customerProjects
-    .filter((p) => ["approved", "scheduled", "in_progress", "installed", "invoiced", "paid"].includes(p.status))
-    .reduce((a, p) => a + p.totalCents, 0);
+  const lifetimeSpendCents =
+    customerProjects
+      .filter((p) =>
+        ["approved", "scheduled", "in_progress", "installed", "invoiced", "paid"].includes(p.status)
+      )
+      .reduce((a, p) => a + p.totalCents, 0) + sageLifetimeCents;
 
   const activeJobs = customerProjects.filter((p) =>
     ["approved", "scheduled", "in_progress", "installed", "invoiced"].includes(p.status)
@@ -103,8 +118,14 @@ export default async function CustomerDetailPage(props: {
   const activeTab = tabParam ?? "projects";
 
   const TABS = [
-    { key: "projects", label: `PROJECTS & QUOTES (${customerProjects.length})` },
-    { key: "invoices", label: `INVOICES & PAYMENTS (${customerInvoices.length})` },
+    {
+      key: "projects",
+      label: `PROJECTS & PAST JOBS (${customerProjects.length + historicalSageInvoices.length})`,
+    },
+    {
+      key: "invoices",
+      label: `INVOICES & PAYMENTS (${customerInvoices.length + historicalSageInvoices.length})`,
+    },
     { key: "equipment", label: `ACTIVE RENTALS (${customerRentals.length})` },
   ];
 
@@ -204,10 +225,10 @@ export default async function CustomerDetailPage(props: {
 
           <div className="py-1.5 sm:py-0 sm:px-4">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Active Jobs / Open Quotes
+              Job History &amp; Quotes
             </div>
             <div className="text-xs font-semibold text-slate-700 tabular-nums mt-0.5">
-              {activeJobs.length} Active • {openQuotes.length} Quotes
+              {historicalSageInvoices.length} Past Jobs • {activeJobs.length} Active • {openQuotes.length} Quotes
             </div>
           </div>
 
@@ -451,6 +472,13 @@ export default async function CustomerDetailPage(props: {
                 </div>
               )}
             </div>
+
+            {/* Historical Sage Jobs & Invoices for this Customer */}
+            <CustomerHistoricalJobsSection
+              customerId={customer.id}
+              customerName={customer.name}
+              invoices={historicalSageInvoices}
+            />
           </div>
         )}
 
@@ -562,6 +590,13 @@ export default async function CustomerDetailPage(props: {
                 </div>
               )}
             </div>
+
+            {/* Historical Sage Invoices for this Customer */}
+            <CustomerHistoricalJobsSection
+              customerId={customer.id}
+              customerName={customer.name}
+              invoices={historicalSageInvoices}
+            />
           </div>
         )}
 

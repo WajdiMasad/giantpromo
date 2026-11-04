@@ -9,6 +9,7 @@ import {
   Package,
   Users,
   CreditCard,
+  FileSearch,
   FileSpreadsheet,
   HardHat,
   Plus,
@@ -74,6 +75,13 @@ export function AppShell({
       label: "Billing",
       shortLabel: "Billing",
       icon: CreditCard,
+      roles: ["admin", "office", "accountant"],
+    },
+    {
+      href: "/sage-invoices",
+      label: "Past Sage Invoices",
+      shortLabel: "Archive",
+      icon: FileSearch,
       roles: ["admin", "office", "accountant"],
     },
     {
