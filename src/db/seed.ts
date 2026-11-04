@@ -1,4 +1,4 @@
-import { count, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import sageCustomersJson from "./sage-customers.json";
@@ -811,52 +811,121 @@ export async function ensureSageCustomersLoaded(db: PgDatabase<any, typeof schem
     .from(schema.customers)
     .where(isNotNull(schema.customers.sageId));
 
-  if (existingSageCount >= list.length) {
-    return { totalSageCustomers: existingSageCount, newlyInserted: 0 };
-  }
-
-  const now = new Date();
-  const batchSize = 100;
   let inserted = 0;
 
-  for (let i = 0; i < list.length; i += batchSize) {
-    const chunk = list.slice(i, i + batchSize).map((c) => ({
-      sageId: c.sageId,
-      name: c.name,
-      companyName: c.companyName || c.name,
-      contactPerson: c.contactPerson || "",
-      email: c.email || "",
-      phone: c.phone || "",
-      addressLine1: c.addressLine1 || "",
-      addressLine2: c.addressLine2 || "",
-      city: c.city || "",
-      province: c.province || "NS",
-      postalCode: c.postalCode || "",
-      country: c.country || "Canada",
-      paymentTerms: c.paymentTerms || "Net 30",
-      taxExempt: Boolean(c.taxExempt),
-      siteNotes: c.siteNotes || "",
-      isActive: true,
-      syncedAt: now,
-    }));
+  if (existingSageCount < list.length) {
+    const now = new Date();
+    const batchSize = 100;
 
-    const res = await db
-      .insert(schema.customers)
-      .values(chunk)
-      .onConflictDoNothing({ target: schema.customers.sageId })
-      .returning({ id: schema.customers.id });
+    for (let i = 0; i < list.length; i += batchSize) {
+      const chunk = list.slice(i, i + batchSize).map((c) => ({
+        sageId: c.sageId,
+        name: c.name,
+        companyName: c.companyName || c.name,
+        contactPerson: c.contactPerson || "",
+        email: c.email || "",
+        phone: c.phone || "",
+        addressLine1: c.addressLine1 || "",
+        addressLine2: c.addressLine2 || "",
+        city: c.city || "",
+        province: c.province || "NS",
+        postalCode: c.postalCode || "",
+        country: c.country || "Canada",
+        paymentTerms: c.paymentTerms || "Net 30",
+        taxExempt: Boolean(c.taxExempt),
+        siteNotes: c.siteNotes || "",
+        isActive: true,
+        syncedAt: now,
+      }));
 
-    inserted += res.length;
+      const res = await db
+        .insert(schema.customers)
+        .values(chunk)
+        .onConflictDoNothing({ target: schema.customers.sageId })
+        .returning({ id: schema.customers.id });
+
+      inserted += res.length;
+    }
+
+    if (inserted > 0) {
+      await db.insert(schema.activityLog).values({
+        actorName: "Sage Accounting Import",
+        entityType: "sage",
+        entityId: "customers",
+        action: "sage.customers_imported",
+        summary: `Imported ${inserted} commercial customer accounts from Sage Accounting (${list.length} total Sage contacts)`,
+      });
+    }
   }
 
-  if (inserted > 0) {
-    await db.insert(schema.activityLog).values({
-      actorName: "Sage Accounting Import",
-      entityType: "sage",
-      entityId: "customers",
-      action: "sage.customers_imported",
-      summary: `Imported ${inserted} commercial customer accounts from Sage Accounting (${list.length} total Sage contacts)`,
-    });
+  const DEMO_CUSTOMER_NAMES = [
+    "O'Regan's Automotive Group",
+    "Steele Auto Group",
+    "Halifax Chamber of Commerce",
+    "RBC Royal Bank — Dartmouth Crossing",
+    "Atlantic Superstore — Bedford Highway",
+    "Moncton Honda Dealership",
+  ];
+
+  // Remove the 6 initial demo customer accounts (sage_id IS NULL) after re-pointing any demo records to real Sage accounts
+  const demoCustomers = await db
+    .select({ id: schema.customers.id, name: schema.customers.name })
+    .from(schema.customers)
+    .where(
+      and(
+        isNull(schema.customers.sageId),
+        inArray(schema.customers.name, DEMO_CUSTOMER_NAMES)
+      )
+    );
+
+  if (demoCustomers.length > 0) {
+    const [realOregans] = await db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(eq(schema.customers.sageId, "AUTO-607"));
+    const [realSteele] = await db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(eq(schema.customers.sageId, "SC"));
+    const [fallbackReal] = await db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(isNotNull(schema.customers.sageId))
+      .limit(1);
+
+    for (const demo of demoCustomers) {
+      const targetId = demo.name.includes("Steele")
+        ? (realSteele?.id ?? fallbackReal?.id)
+        : (realOregans?.id ?? fallbackReal?.id);
+
+      if (targetId) {
+        await db
+          .update(schema.projects)
+          .set({ customerId: targetId })
+          .where(eq(schema.projects.customerId, demo.id));
+        await db
+          .update(schema.invoices)
+          .set({ customerId: targetId })
+          .where(eq(schema.invoices.customerId, demo.id));
+        await db
+          .update(schema.equipmentRentals)
+          .set({ customerId: targetId })
+          .where(eq(schema.equipmentRentals.customerId, demo.id));
+        await db
+          .update(schema.recurringBillingPlans)
+          .set({ customerId: targetId })
+          .where(eq(schema.recurringBillingPlans.customerId, demo.id));
+      }
+    }
+
+    await db
+      .delete(schema.customers)
+      .where(
+        and(
+          isNull(schema.customers.sageId),
+          inArray(schema.customers.name, DEMO_CUSTOMER_NAMES)
+        )
+      );
   }
 
   return { totalSageCustomers: list.length, newlyInserted: inserted };
