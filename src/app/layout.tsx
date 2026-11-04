@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { getDb } from "@/db";
 import { jobs, users } from "@/db/schema";
@@ -8,14 +8,11 @@ import { getNextInvoiceNumberPreview } from "@/lib/invoicing";
 import { AppShell } from "@/components/AppShell";
 import { eq, isNull, and } from "drizzle-orm";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const jakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-jakarta-sans",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -57,7 +54,7 @@ export default async function RootLayout({
   };
 
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${jakartaSans.variable} h-full antialiased`}>
       <body className="min-h-full bg-slate-50 text-slate-900">
         <AppShell
           currentUser={fallbackUser}
